@@ -265,6 +265,10 @@ def _xray_arch_tag(arch: str) -> str:
     }.get(arch, "")
 
 
+def _parse_xray_version(text: str) -> str:
+    try: return __import__("json").loads(text).get("tag_name", "")
+    except: return ""
+
 
 def _create_xray_user() -> None:
     if shell.run(["id", "xray"], check=False).returncode == 0:
