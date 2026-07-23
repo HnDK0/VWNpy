@@ -270,10 +270,12 @@ def build_user_sub_file(
     token: str,
     domain: str,
     server_ip: str,
-    output_dir: str = SUB_DIR,
+    output_dir: "str | None" = None,
     template_dir: "str | None" = None,
 ) -> None:
     """Сгенерировать .txt (base64) и .html для одного пользователя."""
+    if output_dir is None:
+        output_dir = SUB_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     ws_path = get_conf_or_none("WS_PATH") or ""
