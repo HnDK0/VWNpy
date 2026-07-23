@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "vwnpy"
 version = "0.2.0"
 description = "VWN — Xray management panel (Python CLI)"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "click",
     "rich",
