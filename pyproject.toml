@@ -15,6 +15,9 @@ dependencies = [
 [project.scripts]
 vwn = "vwn.cli:cli"
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [tool.setuptools]
 packages = ["vwn", "vwn.core", "vwn.modules", "vwn.tui", "vwn.data"]
 
