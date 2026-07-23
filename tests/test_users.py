@@ -380,6 +380,7 @@ def test_add_user_unique_token(conf, tmp_path):
 def test_add_user_many(tmp_path, monkeypatch):
     monkeypatch.setattr(users, "USERS_FILE", str(tmp_path / "users.conf"))
     monkeypatch.setattr(users, "SUB_DIR", str(tmp_path / "sub"))
+    monkeypatch.setattr(sub, "SUB_DIR", str(tmp_path / "sub"))
     monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
     config.vwn_conf_set("DOMAIN", "x.com")
