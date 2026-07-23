@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>{{PAGE_TITLE}}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── THEMES ── */
+:root,[data-theme="light"]{
+  --bg:#f6f5f3;--surface:#ffffff;--surface2:#f0eeeb;
+  --border:#e5e3df;--border2:#d1cecc;
+  --text:#1a1917;--muted:#7a7670;--muted2:#b5b2ae;
+  --accent:#6c47f5;--accent-dim:#f0edff;--accent-border:#c8bafa;--accent-text:#5a35e0;
+  --green:#16a34a;--green-dim:#f0fdf4;--green-text:#15803d;
+  --amber:#d97706;--amber-dim:#fffbeb;
+  --blue:#1d6fd8;--blue-dim:#eff6ff;
+  --ws-icon:#6c47f5;--ws-dim:#f0edff;
+  --re-icon:#d97706;--re-dim:#fff4e0;
+  --xh-icon:#0e9f6e;--xh-dim:#ecfdf5;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+}
+[data-theme="dark"]{
+  --bg:#0e0e10;--surface:#18181c;--surface2:#1e1e24;
+  --border:#2a2a32;--border2:#363640;
+  --text:#e8e6e3;--muted:#8a8890;--muted2:#5a5860;
+  --accent:#8b6bff;--accent-dim:#1e1832;--accent-border:#3d2f7a;--accent-text:#a98fff;
+  --green:#22c55e;--green-dim:#0a1f14;--green-text:#4ade80;
+  --amber:#f59e0b;--amber-dim:#1c1508;
+  --blue:#60a5fa;--blue-dim:#0f1f3a;
+  --ws-icon:#a98fff;--ws-dim:#1e1832;
+  --re-icon:#f59e0b;--re-dim:#1c1508;
+  --xh-icon:#34d399;--xh-dim:#0a1f14;
+  --shadow:0 1px 3px rgba(0,0,0,.4);
+}
+
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px;transition:background .2s,color .2s}
+
+/* ── HEADER ── */
+.hdr{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 18px;position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
+.hdr-row1{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.hdr-icon{width:36px;height:36px;border-radius:10px;background:var(--accent-dim);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hdr-icon svg{width:17px;height:17px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hdr-name{font-size:15px;font-weight:600;letter-spacing:-.02em;color:var(--text)}
+.hdr-status{margin-left:auto;background:var(--green-dim);color:var(--green-text);font-size:10px;font-weight:600;padding:3px 10px;border-radius:20px;letter-spacing:.06em;font-family:'DM Mono',monospace}
+.theme-toggle{margin-left:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;transition:background .15s}
+.theme-toggle:hover{background:var(--border)}
+.proto-tags{display:flex;gap:5px;flex-wrap:wrap}
+.proto-tag{background:var(--accent-dim);color:var(--accent-text);font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;letter-spacing:.05em;font-family:'DM Mono',monospace;border:1px solid var(--accent-border)}
+
+/* ── SUBSCRIPTION HERO ── */
+.sub-hero{padding:16px 18px;background:var(--surface);border-bottom:1px solid var(--border)}
+.sub-lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.sub-url-box{background:var(--accent-dim);border:1.5px solid var(--accent-border);border-radius:10px;padding:11px 14px;margin-bottom:10px;cursor:pointer;position:relative;overflow:hidden}
+.sub-url-box::after{content:'';position:absolute;right:0;top:0;bottom:0;width:40px;background:linear-gradient(to right,transparent,var(--accent-dim));pointer-events:none}
+.sub-url-text{font-family:'DM Mono',monospace;font-size:11.5px;color:var(--accent-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;padding-right:20px}
+.sub-row{display:flex;gap:8px}
+.btn-primary{background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px;letter-spacing:.01em;transition:opacity .15s,transform .1s;flex:1;justify-content:center}
+.btn-primary:active{transform:scale(.97);opacity:.9}
+.btn-secondary{background:var(--surface);color:var(--muted);border:1px solid var(--border2);padding:9px 14px;border-radius:8px;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .15s,transform .1s;white-space:nowrap}
+.btn-secondary:active{transform:scale(.97)}
+.btn-secondary:hover{background:var(--surface2)}
+
+/* ── TABS ── */
+.tabs{display:flex;gap:0;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:11px 14px;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;letter-spacing:.04em;text-transform:uppercase;transition:color .15s,border-color .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── PANELS ── */
+.panel{display:none;padding:16px 18px}
+.panel.active{display:block}
+
+/* ── SECTION LABEL ── */
+.sec-lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:16px 0 8px}
+.sec-lbl:first-child{margin-top:0}
+
+/* ── CONFIG CARD ── */
+.cfg-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;margin-bottom:8px;transition:border-color .15s}
+.cfg-card:hover{border-color:var(--border2)}
+.cfg-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cfg-icon.ws{background:var(--ws-dim)}
+.cfg-icon.reality{background:var(--re-dim)}
+.cfg-icon.xhttp{background:var(--xh-dim)}
+.cfg-icon svg{width:15px;height:15px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cfg-icon.ws svg{stroke:var(--ws-icon)}
+.cfg-icon.reality svg{stroke:var(--re-icon)}
+.cfg-icon.xhttp svg{stroke:var(--xh-icon)}
+.cfg-info{flex:1;min-width:0}
+.cfg-name{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:2px}
+.cfg-host{font-size:10.5px;color:var(--muted);font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:baseline;gap:6px}.cfg-cdn-badge{flex-shrink:0;font-size:9.5px;font-weight:600;font-family:'DM Mono',monospace;color:var(--blue);background:var(--blue-dim);border:1px solid color-mix(in srgb,var(--blue) 25%,transparent);border-radius:4px;padding:1px 5px;letter-spacing:.02em}
+.cfg-btns{display:flex;gap:5px;flex-shrink:0}
+.icon-btn{width:28px;height:28px;border-radius:7px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,transform .1s;color:var(--muted)}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn:hover{background:var(--border);color:var(--text)}
+.icon-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── ALL CONFIGS BLOCK ── */
+.all-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.all-box .url-text{font-family:'DM Mono',monospace;font-size:10px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px;max-height:130px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-bottom:10px;scrollbar-width:thin;scrollbar-color:var(--border) transparent;line-height:1.6}
+.all-box .btn-row{display:flex;gap:8px}
+
+/* ── QR AREA ── */
+.qr-wrap{display:none;margin-top:12px;text-align:center;padding:4px 0}
+.qr-wrap.open{display:block}
+.qr-inner{display:inline-block;background:#fff;padding:10px;border-radius:8px;box-shadow:var(--shadow)}
+
+/* ── APP CARDS ── */
+.app-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.app-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.app-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.app-dot.purple{background:var(--accent)}
+.app-dot.amber{background:var(--amber)}
+.app-dot.green{background:var(--green)}
+.app-dot.blue{background:var(--blue)}
+.app-name{font-size:12.5px;font-weight:600;color:var(--text)}
+.app-platform{font-size:10.5px;color:var(--muted);margin-left:auto;text-align:right}
+.app-steps{list-style:none;font-size:11px;color:var(--muted);line-height:1.75;padding-left:2px}
+.app-steps li{display:flex;gap:6px}
+.app-steps li::before{content:attr(data-n)".";color:var(--accent);font-weight:600;flex-shrink:0;font-family:'DM Mono',monospace}
+.app-note{font-size:10.5px;color:var(--amber);background:var(--amber-dim);border:1px solid color-mix(in srgb,var(--amber) 20%,transparent);border-radius:6px;padding:6px 8px;margin-bottom:8px;line-height:1.5}
+
+.kv-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.kv-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.kv-badge{background:var(--surface2);color:var(--muted);font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;letter-spacing:.05em;font-family:'DM Mono',monospace;border:1px solid var(--border)}
+.kv-val{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 10px;word-break:break-all;max-height:90px;overflow-y:auto;margin-bottom:8px;line-height:1.5}
+.kv-btns{display:flex;gap:6px}
+.kv-btn{background:var(--surface2);color:var(--muted);border:1px solid var(--border);padding:6px 12px;border-radius:7px;font-size:11px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s,transform .1s;display:flex;align-items:center;gap:5px}
+.kv-btn:active{transform:scale(.97)}
+.kv-btn:hover{background:var(--border);color:var(--text)}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);font-size:12px;font-weight:600;padding:8px 18px;border-radius:20px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:100;white-space:nowrap;font-family:'DM Mono',monospace}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- TOAST FEEDBACK -->
+<div class="toast" id="toast">Скопировано</div>
+
+<!-- ══ HEADER ══ -->
+<div class="hdr">
+  <div class="hdr-row1">
+    <div class="hdr-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <span class="hdr-name">{{USER_LABEL}}</span>
+    <span class="hdr-status">active</span>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" id="themeBtn">🌙</button>
+  </div>
+  <div class="proto-tags">{{PROTO_TAGS}}</div>
+</div>
+
+<!-- ══ SUBSCRIPTION URL HERO ══ -->
+<div class="sub-hero">
+  <div class="sub-lbl">Subscription URL</div>
+  <div class="sub-url-box" onclick="cp('sub-url',null)">
+    <span class="sub-url-text" id="sub-url">{{SUB_URL}}</span>
+  </div>
+  <div class="sub-row">
+    <button class="btn-primary" onclick="cp('sub-url',this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Копировать
+    </button>
+    <button class="btn-secondary" onclick="tqr('sub-qr','sub-url','sub-qrc')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+      QR Code
+    </button>
+  </div>
+  <div class="qr-wrap" id="sub-qr"><div class="qr-inner" id="sub-qrc"></div></div>
+</div>
+
+<!-- ══ TABS ══ -->
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('configs',this)">VLESS Конфиги</button>
+  <button class="tab" onclick="switchTab('apps',this)">Приложения</button>
+  {{DNS_TAB_BTN}}
+</div>
+
+<!-- ══ PANEL: CONFIGS ══ -->
+<div id="tab-configs" class="panel active">
+
+  <div class="sec-lbl">Протоколы</div>
+
+  {{CONFIGS_HTML}}
+
+  {{ALL_CONFIGS_HTML}}
+
+</div>
+
+<!-- ══ PANEL: APPS ══ -->
+<div id="tab-apps" class="panel">
+  <div class="app-card">
+    <div class="app-head">
+      <div class="app-dot purple"></div>
+      <div class="app-name">v2rayNG</div>
+      <div class="app-platform">Android</div>
+    </div>
+    <ul class="app-steps">
+      <li data-n="1">Открыть v2rayNG</li>
+      <li data-n="2">«+» → «Subscription group»</li>
+      <li data-n="3">Вставить Subscription URL</li>
+      <li data-n="4">Обновить группу → подключиться</li>
+    </ul>
+  </div>
+  <div class="app-card">
+    <div class="app-head">
+      <div class="app-dot amber"></div>
+      <div class="app-name">Hiddify</div>
+      <div class="app-platform">Android · iOS · Desktop</div>
+    </div>
+    <ul class="app-steps">
+      <li data-n="1">«+» → «Добавить по ссылке»</li>
+      <li data-n="2">Вставить Subscription URL</li>
+      <li data-n="3">Нажать «Подключиться»</li>
+    </ul>
+  </div>
+  <div class="app-card">
+    <div class="app-head">
+      <div class="app-dot green"></div>
+      <div class="app-name">Streisand</div>
+      <div class="app-platform">iOS</div>
+    </div>
+    <ul class="app-steps">
+      <li data-n="1">«+» → «URL»</li>
+      <li data-n="2">Вставить Subscription URL</li>
+      <li data-n="3">Импортировать → подключиться</li>
+    </ul>
+  </div>
+  <div class="app-card">
+  <div class="app-head">
+    <div class="app-dot blue"></div>
+    <div class="app-name">Clash Meta / Mihomo</div>
+    <div class="app-platform">Win · macOS · Linux</div>
+  </div>
+  <div class="app-note">⚠ XHTTP требует версию ядра ≥ v1.19.23 (апрель 2026)</div>
+  <ul class="app-steps">
+    <li data-n="1">Скопировать ссылку на подписку</li>
+    <li data-n="2">В вашем клиенте (Clash Verge, Mihomo Party и др.) открыть раздел профилей/подписок</li>
+    <li data-n="3">Добавить профиль по ссылке (URL), обновить и выбрать его</li>
+  </ul>
+</div>
+  </div>
+</div>
+
+
+
+<!-- ══ QR + SCRIPTS ══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+var _qr={};
+var _toast=document.getElementById('toast');
+var _toastTimer;
+
+function showToast(msg){
+  _toast.textContent=msg||'Скопировано';
+  _toast.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(function(){_toast.classList.remove('show');},1600);
+}
+
+function switchTab(name,btn){
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('tab-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+}
+
+function cp(id,btn){
+  var el=document.getElementById(id);
+  if(!el) return;
+  var text=(el.innerText||el.textContent).trim();
+  navigator.clipboard.writeText(text).then(function(){
+    showToast('Скопировано ✓');
+    if(btn){
+      var orig=btn.innerHTML;
+      btn.style.background='var(--green)';
+      btn.style.color='#fff';
+      setTimeout(function(){btn.style.background='';btn.style.color='';},1500);
+    }
+  }).catch(function(){
+    var r=document.createRange();
+    r.selectNodeContents(el);
+    var s=window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    showToast('Выделено — скопируйте вручную');
+  });
+}
+
+function tqr(wrapId,srcId,innerCId){
+  var w=document.getElementById(wrapId);
+  if(!w) return;
+  var open=w.classList.toggle('open');
+  if(open&&!_qr[wrapId]){
+    var text=(document.getElementById(srcId).innerText||document.getElementById(srcId).textContent).trim();
+    if(text&&text.length>4&&text!=='URI не сгенерирован'){
+      try{
+        new QRCode(document.getElementById(innerCId),{text:text,width:200,height:200,correctLevel:QRCode.CorrectLevel.M});
+        _qr[wrapId]=true;
+      }catch(e){}
+    }
+  }
+}
+
+function toggleTheme(){
+  var html=document.documentElement;
+  var cur=html.getAttribute('data-theme');
+  var next=cur==='dark'?'light':'dark';
+  html.setAttribute('data-theme',next);
+  document.getElementById('themeBtn').textContent=next==='dark'?'🌙':'☀️';
+  try{localStorage.setItem('vwn-theme',next);}catch(e){}
+}
+
+(function(){
+  try{
+    var saved=localStorage.getItem('vwn-theme');
+    if(saved){
+      document.documentElement.setAttribute('data-theme',saved);
+      document.getElementById('themeBtn').textContent=saved==='dark'?'🌙':'☀️';
+    }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
