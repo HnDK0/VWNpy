@@ -4,7 +4,7 @@ import json
 import pytest
 
 from vwn.core import config
-from vwn.modules import users
+from vwn.modules import users, sub
 
 
 @pytest.fixture
@@ -15,6 +15,7 @@ def conf(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
     monkeypatch.setattr(users, "USERS_FILE", str(tmp_path / "users.conf"))
     monkeypatch.setattr(users, "SUB_DIR", str(tmp_path / "sub"))
+    monkeypatch.setattr(sub, "SUB_DIR", str(tmp_path / "sub"))
     config.vwn_conf_set("DOMAIN", "vpn.example.com")
     config.vwn_conf_set("UUID", "550e8400-e29b-41d4-a716-446655440000")
     config.vwn_conf_set("SERVER_IP", "1.2.3.4")
