@@ -1,7 +1,7 @@
 """Shared domain list helpers for tunnel Split-routing."""
 import json
 import os
-import subprocess
+from vwn.core import shell
 
 from vwn.modules._outbound import _paths
 
@@ -70,5 +70,4 @@ def _apply(tag: str) -> None:
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
-        subprocess.run(["systemctl", "restart", svc],
-                       capture_output=True, check=False)
+        shell.run(["systemctl", "restart", svc], timeout=30, check=False)

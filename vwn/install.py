@@ -25,7 +25,7 @@ class InstallOptions:
     cert_method: str = "standalone"
     cf_email: str = ""
     cf_key: str = ""
-    ssh_port: int = 0
+    ssh_port: int = 22
     bbr: bool = False
     fail2ban: bool = False
     no_warp: bool = False
@@ -147,6 +147,34 @@ def run_install(argv: "list | None" = None) -> None:
     if not system.nginx_has_grpc_module():
         shell.die("nginx собран без http_grpc_module. "
                   "XHTTP-gRPC не заработает.")
+
+    # ── Безопасность ──────────────────────────────────────────────────
+    if opts.bbr:
+        from vwn.modules.security import bbr_enable
+        shell.run_task("BBR", bbr_enable)
+    if opts.fail2ban:
+        from vwn.modules.security import fail2ban_install
+        shell.run_task("Fail2Ban", fail2ban_install)
+    if opts.jail:
+        from vwn.modules.security import webjail_enable
+        shell.run_task("WebJail (nginx)", webjail_enable)
+    if not opts.ipv6:
+        from vwn.modules.security import ipv6_disable
+        shell.run_task("Отключение IPv6", ipv6_disable)
+    if opts.cpu_guard:
+        from vwn.modules.security import cpu_guard_enable
+        shell.run_task("CPU Guard", cpu_guard_enable)
+
+    # ── Туннели ───────────────────────────────────────────────────────
+    if opts.psiphon_warp:
+        from vwn.modules.psiphon import install as install_psiphon
+        shell.run_task("Psiphon + WARP", lambda: install_psiphon(opts.psiphon_country, tunnel_mode="warp"))
+    elif opts.psiphon:
+        from vwn.modules.psiphon import install as install_psiphon
+        shell.run_task("Psiphon tunnel", lambda: install_psiphon(opts.psiphon_country))
+    if opts.no_warp:
+        from vwn.modules.warp import remove as remove_warp
+        shell.run_task("Удаление WARP", remove_warp)
 
     # ── Конфиги + сертификат + юниты + старт ──────────────────────────
     shell.run_task(

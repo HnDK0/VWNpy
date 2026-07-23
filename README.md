@@ -51,9 +51,7 @@ sudo bash install.sh --domain your.domain --cert standalone --bbr --fail2ban
 | Флаг | По умолчанию | Описание |
 |------|-------------|----------|
 | `--stub` | `https://httpbin.org/` | Сайт-заглушка для fallback |
-| `--lang` | `ru` | Язык (`ru` / `en`) |
 | `--reality-dest` | `microsoft.com:443` | Fallback-домен Reality |
-| `--reality-port` | `443` | Порт Reality |
 | `--cert-method` | `standalone` | `standalone` / `cf` / `self` |
 | `--cf-email` | — | Email Cloudflare (при `--cert-method cf`) |
 | `--cf-key` | — | API Key Cloudflare (при `--cert-method cf`) |

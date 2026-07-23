@@ -79,7 +79,7 @@ def _enable_tmpfs() -> None:
     os.makedirs("/var/log/xray", exist_ok=True)
     unit = (
         "[Unit]\nDescription=tmpfs for xray logs (privacy mode)\n"
-        "Before=xray.service xray-reality.service\n\n"
+        "Before=xray-reality.service\n\n"
         "[Mount]\nWhat=tmpfs\nWhere=/var/log/xray\nType=tmpfs\n"
         "Options=defaults,noatime,size=32m,mode=750\n\n"
         "[Install]\nWantedBy=multi-user.target\n"
@@ -129,7 +129,7 @@ def _real_score() -> int:
         with open("/etc/nginx/nginx.conf") as f:
             if re.search(r"access_log\s+off", f.read()):
                 score += 1
-    if os.path.isfile("/etc/systemd/system/xray.service.d/no-journal.conf"):
+    if os.path.isfile("/etc/systemd/system/xray-reality.service.d/no-journal.conf"):
         score += 1
     if shell.service_active("var-log-xray.mount"):
         score += 1
@@ -149,10 +149,10 @@ def enable() -> None:
         return
     _xray_disable_log()
     _nginx_set_access_log("off")
-    for svc in ["xray", "xray-reality"]:
+    for svc in ["xray-reality"]:
         _systemd_output(svc, "disable")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    shell.run(["systemctl", "restart", "xray", "xray-reality"], check=False)
+    shell.run(["systemctl", "restart", "xray-reality"], check=False)
     _enable_tmpfs()
     _shred_logs()
     config.vwn_conf_set(_PRIVACY_FLAG, "1")
@@ -163,12 +163,12 @@ def disable() -> None:
         return
     _xray_restore_log()
     _nginx_set_access_log("on")
-    for svc in ["xray", "xray-reality"]:
+    for svc in ["xray-reality"]:
         _systemd_output(svc, "restore")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    shell.run(["systemctl", "stop", "xray", "xray-reality"], check=False)
+    shell.run(["systemctl", "stop", "xray-reality"], check=False)
     _disable_tmpfs()
-    shell.run(["systemctl", "start", "xray", "xray-reality"], check=False)
+    shell.run(["systemctl", "start", "xray-reality"], check=False)
     config.vwn_conf_set(_PRIVACY_FLAG, "0")
 
 

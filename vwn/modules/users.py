@@ -101,7 +101,7 @@ def _country_code_to_flag(code: str) -> str:
 
 def get_country_flag(ip: str) -> str:
     try:
-        url = f"http://ip-api.com/line/{ip}?fields=countryCode"
+        url = f"https://ip-api.com/line/{ip}?fields=countryCode"
         with urllib.request.urlopen(url, timeout=5) as resp:
             code = resp.read().decode().strip()
         return _country_code_to_flag(code)
@@ -150,7 +150,7 @@ def get_active_modes_suffix() -> str:
     if warp_g:
         try:
             with urllib.request.urlopen(
-                "http://ip-api.com/line/?fields=countryCode", timeout=5
+                "https://ip-api.com/line/?fields=countryCode", timeout=5
             ) as resp:
                 code = resp.read().decode().strip()
             suffix += " \u2601\ufe0f" + _country_code_to_flag(code) if len(code) == 2 and code.isalpha() else " \u2601\ufe0f"
@@ -176,7 +176,7 @@ def get_active_modes_suffix() -> str:
                         break
         if relay_host:
             try:
-                url = f"http://ip-api.com/line/{relay_host}?fields=countryCode"
+                url = f"https://ip-api.com/line/{relay_host}?fields=countryCode"
                 with urllib.request.urlopen(url, timeout=5) as resp:
                     code = resp.read().decode().strip()
                 suffix += " \U0001f309" + _country_code_to_flag(code) if len(code) == 2 and code.isalpha() else " \U0001f309"

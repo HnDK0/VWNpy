@@ -35,10 +35,13 @@ def _codename():
     r = _runcmd(["lsb_release", "-sc"], check=False, capture=True)
     if r.returncode == 0:
         return r.stdout.strip()
-    r = _runcmd([".", "/etc/os-release", "&&", "echo", "$VERSION_CODENAME"],
-                check=False, capture=True)
-    if r.returncode == 0:
-        return r.stdout.strip()
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("VERSION_CODENAME="):
+                    return line.strip().split("=", 1)[1].strip().strip('"')
+    except (OSError, IOError):
+        pass
     return ""
 
 
@@ -149,7 +152,7 @@ def check_ip() -> dict:
     result["tor"] = r.stdout.strip() if r.returncode == 0 else ""
     if result["tor"]:
         r = subprocess.run(["curl", "-sS", "--max-time", "10",
-                            f"http://ip-api.com/csv/{result['tor']}?fields=countryCode"],
+                            f"https://ip-api.com/csv/{result['tor']}?fields=countryCode"],
                            capture_output=True, text=True, timeout=15)
         result["country"] = r.stdout.strip().upper()[:2] if r.returncode == 0 else ""
     return result

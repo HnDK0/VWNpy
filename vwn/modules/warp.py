@@ -643,7 +643,7 @@ def check_ip() -> dict:
     result["warp"] = r.stdout.strip() if r.returncode == 0 else ""
     if result["warp"]:
         r = _sp.run(["curl", "-sS", "--max-time", "10",
-                     f"http://ip-api.com/csv/{result['warp']}?fields=countryCode"],
+                     f"https://ip-api.com/csv/{result['warp']}?fields=countryCode"],
                     capture_output=True, text=True, timeout=15)
         result["country"] = r.stdout.strip().upper()[:2] if r.returncode == 0 else ""
     return result
