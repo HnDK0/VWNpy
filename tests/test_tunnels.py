@@ -70,21 +70,20 @@ def test_render_status():
 # ── Guard: only one tunnel Global ─────────────────────────────────
 
 def test_global_guard_removes_other_global(monkeypatch, tmp_path):
-    from vwn.tui import menu
-    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
+    from vwn.tui import tunnel_menu
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "warp"},
         {"type": "field", "domain": ["geosite:netflix"], "outboundTag": "psiphon"},
     ]}, "outbounds": []}
     p = tmp_path / "config.json"
-    import json
     with open(p, "w") as f:
         json.dump(cfg, f)
-    # also create empty xhttp.json
     with open(tmp_path / "xhttp.json", "w") as f:
         json.dump({"routing": {"rules": []}, "outbounds": []}, f)
 
-    menu._switch_tunnel_mode("psiphon", "Global")
+    tunnel_menu._switch_tunnel_mode("psiphon", "Global")
 
     with open(p) as f:
         result = json.load(f)
@@ -101,19 +100,19 @@ def test_global_guard_removes_other_global(monkeypatch, tmp_path):
 
 def test_global_guard_allows_split(monkeypatch, tmp_path):
     """Split mode should not be affected by guard."""
-    from vwn.tui import menu
-    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
+    from vwn.tui import tunnel_menu
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "warp"},
     ]}, "outbounds": []}
-    import json
     p = tmp_path / "config.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
         json.dump({"routing": {"rules": []}, "outbounds": []}, f)
 
-    menu._switch_tunnel_mode("psiphon", "Split")
+    tunnel_menu._switch_tunnel_mode("psiphon", "Split")
 
     with open(p) as f:
         result = json.load(f)
@@ -127,17 +126,17 @@ def test_global_guard_allows_split(monkeypatch, tmp_path):
 # ── Split fallback: whoer.net when no domains configured ────
 
 def test_switch_split_uses_whoer_net_when_no_domains(monkeypatch, tmp_path):
-    from vwn.tui import menu
-    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
+    from vwn.tui import tunnel_menu
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": []}, "outbounds": []}
     p = tmp_path / "config.json"
-    import json
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
         json.dump({"routing": {"rules": []}, "outbounds": []}, f)
 
-    menu._switch_tunnel_mode("psiphon", "Split")
+    tunnel_menu._switch_tunnel_mode("psiphon", "Split")
 
     with open(p) as f:
         result = json.load(f)
@@ -150,12 +149,11 @@ def test_switch_split_uses_whoer_net_when_no_domains(monkeypatch, tmp_path):
 
 
 def test_switch_split_uses_saved_domains(monkeypatch, tmp_path):
-    from vwn.tui import menu
-    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(menu, "config", menu.config)
+    from vwn.tui import tunnel_menu
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": []}, "outbounds": []}
     p = tmp_path / "config.json"
-    import json
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
@@ -163,11 +161,10 @@ def test_switch_split_uses_saved_domains(monkeypatch, tmp_path):
 
     from vwn.modules import _domains
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
-    # Write saved domains
     domains_file = tmp_path / "psiphon_domains.txt"
     domains_file.write_text("google.com\nyoutube.com\n", encoding="utf-8")
 
-    menu._switch_tunnel_mode("psiphon", "Split")
+    tunnel_menu._switch_tunnel_mode("psiphon", "Split")
 
     with open(p) as f:
         result = json.load(f)
