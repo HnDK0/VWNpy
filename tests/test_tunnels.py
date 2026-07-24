@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from vwn.modules import tunnels
 
 
@@ -38,6 +40,25 @@ def test_from_file(tmp_path):
     p.write_text(json.dumps(_cfg([{"outboundTag": "tor", "domain": ["a"]}])), encoding="utf-8")
     assert tunnels.get_tunnel_mode_from_file(str(p), "tor") == "Split"
     assert tunnels.get_tunnel_mode_from_file(str(tmp_path / "missing.json"), "tor") == "OFF"
+
+
+# ── Warp method-specific tags ──────────────────────────────
+
+@pytest.mark.parametrize("method_tag", ["warp-native", "warp-amnezia", "warp-svc"])
+def test_warp_method_tags_global(method_tag):
+    cfg = _cfg([{"outboundTag": method_tag, "port": "0-65535"}])
+    assert tunnels.get_tunnel_mode(cfg, "warp") == "Global"
+
+
+@pytest.mark.parametrize("method_tag", ["warp-native", "warp-amnezia", "warp-svc"])
+def test_warp_method_tags_split(method_tag):
+    cfg = _cfg([{"outboundTag": method_tag, "domain": ["geosite:ru"]}])
+    assert tunnels.get_tunnel_mode(cfg, "warp") == "Split"
+
+
+def test_warp_method_tags_ignore_inbound():
+    cfg = _cfg([{"outboundTag": "warp-native", "port": "0-65535", "inboundTag": ["x"]}])
+    assert tunnels.get_tunnel_mode(cfg, "warp") == "OFF"
 
 
 def test_render_status():
@@ -101,3 +122,58 @@ def test_global_guard_allows_split(monkeypatch, tmp_path):
                    if r.get("outboundTag") == "warp"
                    and r.get("port") == "0-65535"]
     assert len(warp_global) == 1, "warp Global should survive Split switch"
+
+
+# ── Split fallback: whoer.net when no domains configured ────
+
+def test_switch_split_uses_whoer_net_when_no_domains(monkeypatch, tmp_path):
+    from vwn.tui import menu
+    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
+    cfg = {"routing": {"rules": []}, "outbounds": []}
+    p = tmp_path / "config.json"
+    import json
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+    with open(tmp_path / "xhttp.json", "w") as f:
+        json.dump({"routing": {"rules": []}, "outbounds": []}, f)
+
+    menu._switch_tunnel_mode("psiphon", "Split")
+
+    with open(p) as f:
+        result = json.load(f)
+    rules = result["routing"]["rules"]
+    split_rules = [r for r in rules
+                   if r.get("outboundTag") == "psiphon"
+                   and r.get("domain")]
+    assert len(split_rules) == 1, "should have psiphon Split rule"
+    assert split_rules[0]["domain"] == ["domain:whoer.net"]
+
+
+def test_switch_split_uses_saved_domains(monkeypatch, tmp_path):
+    from vwn.tui import menu
+    monkeypatch.setattr(menu.config, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(menu, "config", menu.config)
+    cfg = {"routing": {"rules": []}, "outbounds": []}
+    p = tmp_path / "config.json"
+    import json
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+    with open(tmp_path / "xhttp.json", "w") as f:
+        json.dump({"routing": {"rules": []}, "outbounds": []}, f)
+
+    from vwn.modules import _domains
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+    # Write saved domains
+    domains_file = tmp_path / "psiphon_domains.txt"
+    domains_file.write_text("google.com\nyoutube.com\n", encoding="utf-8")
+
+    menu._switch_tunnel_mode("psiphon", "Split")
+
+    with open(p) as f:
+        result = json.load(f)
+    rules = result["routing"]["rules"]
+    split_rules = [r for r in rules
+                   if r.get("outboundTag") == "psiphon"
+                   and r.get("domain")]
+    assert len(split_rules) == 1
+    assert split_rules[0]["domain"] == ["domain:google.com", "domain:youtube.com"]

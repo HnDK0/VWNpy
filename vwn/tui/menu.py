@@ -645,29 +645,55 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
 _TUNNEL_TAGS = {"warp", "psiphon", "tor", "relay"}
 
 
-def _switch_tunnel_mode(tag: str, mode: str) -> None:
+def _is_any_tunnel_tag(tag: str) -> bool:
+    if tag in _TUNNEL_TAGS:
+        return True
+    return tag.startswith("warp-")
+
+
+def _switch_tunnel_mode(tag: str, mode: str) -> str:
+    """Переключить режим туннеля. Возвращает реальный outboundTag."""
     if not os.path.isfile(os.path.join(config.XRAY_DIR, "config.json")):
-        return
+        return tag
     import json
     from vwn.modules._outbound import _paths
+    from vwn.modules.tunnels import _match_tunnel_tag
     for path in _paths():
         if not os.path.isfile(path):
             continue
         with open(path) as f:
             cfg = json.load(f)
         rules = cfg.setdefault("routing", {}).setdefault("rules", [])
-        rules = [r for r in rules if r.get("outboundTag") != tag]
+        # Resolve actual outbound tag for warp
+        actual_tag = tag
+        if tag == "warp":
+            for o in cfg.get("outbounds", []):
+                if _match_tunnel_tag(o.get("tag", ""), "warp"):
+                    actual_tag = o["tag"]
+                    break
+        rules = [r for r in rules if not _match_tunnel_tag(r.get("outboundTag", ""), tag)]
         if mode == "Global":
-            # guard: only one tunnel can be Global — remove other Global rules
             rules = [r for r in rules
-                     if not (r.get("outboundTag") in _TUNNEL_TAGS
+                     if not (_is_any_tunnel_tag(r.get("outboundTag", ""))
                              and r.get("port") == "0-65535")]
-            rules.insert(0, {"type": "field", "port": "0-65535", "outboundTag": tag})
+            rules.insert(0, {"type": "field", "port": "0-65535", "outboundTag": actual_tag})
         elif mode == "Split":
-            rules.insert(0, {"type": "field", "domain": ["geosite:netflix", "geosite:youtube", "geosite:spotify"], "outboundTag": tag})
+            from vwn.modules._domains import list_domains
+            domains = list_domains(actual_tag)
+            if not domains:
+                domains = ["whoer.net"]
+            domains_json = [f"domain:{d}" for d in domains]
+            rules.insert(0, {"type": "field", "domain": domains_json, "outboundTag": actual_tag})
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    if tag == "warp" and mode != "OFF":
+        from vwn.core import config as _cfg
+        _cfg.vwn_conf_set("WARP_TUNNEL_MODE", mode)
+    elif tag == "warp" and mode == "OFF":
+        from vwn.core import config as _cfg
+        _cfg.vwn_conf_del("WARP_TUNNEL_MODE")
+    return actual_tag
 
 
 def _run_task(title: str, fn):

@@ -146,7 +146,12 @@ def get_active_modes_suffix() -> str:
 
     def is_global(tag: str) -> bool:
         for r in rules:
-            if r.get("outboundTag") == tag and not r.get("inboundTag") and r.get("port") == "0-65535":
+            otag = r.get("outboundTag", "")
+            if tag == "warp":
+                match = otag.startswith("warp-") or otag == "warp"
+            else:
+                match = otag == tag
+            if match and not r.get("inboundTag") and r.get("port") == "0-65535":
                 return True
         return False
 

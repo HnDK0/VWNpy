@@ -184,6 +184,22 @@ def test_get_active_modes_suffix_with_rules(tmp_path, monkeypatch):
     assert "\U0001f9c5" in suffix  # Tor onion
 
 
+def test_get_active_modes_warp_method_tags(tmp_path, monkeypatch):
+    """WARP method-specific tags (warp-native, warp-svc, warp-amnezia) are recognized."""
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
+    os.makedirs(str(tmp_path), exist_ok=True)
+    with open(str(tmp_path / "config.json"), "w") as f:
+        json.dump({
+            "routing": {
+                "rules": [
+                    {"type": "field", "port": "0-65535", "outboundTag": "warp-native"},
+                ]
+            }
+        }, f)
+    suffix = users.get_active_modes_suffix()
+    assert "\u2601\ufe0f" in suffix  # WARP cloud emoji
+
+
 # ── get_config_name ────────────────────────────────────────
 
 def test_get_config_name_ws(conf, monkeypatch):

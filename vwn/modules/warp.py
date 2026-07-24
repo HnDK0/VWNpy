@@ -1,5 +1,10 @@
 """WARP tunnel — 3 метода: native (wgcf→Xray WG), amnezia (kernel/userspace), warp-svc.
 
+Каждый метод получает уникальный тег outbound в конфиге Xray:
+  native   → "warp-native"
+  amnezia  → "warp-amnezia"
+  warp-svc → "warp-svc"
+
 Режимы AmneziaWG:
   "kernel"    — amneziawg kernel module + awg-quick (netlink, есть обфускация)
   "userspace" — wireguard-go + wg-quick (UAPI, без обфускации)
@@ -34,6 +39,11 @@ WIREGUARD_GO_BIN = "/usr/local/bin/wireguard-go"
 WG_QUICK_BIN = "/usr/bin/wg-quick"
 
 WARP_TAG = "warp"
+WARP_TAGS = {
+    "native": "warp-native",
+    "amnezia": "warp-amnezia",
+    "warp-svc": "warp-svc",
+}
 SOCKS_TAG = "socks-warp"
 
 AWG_GO_URL = "https://github.com/HnDK0/amneziawg-go-build/releases/latest/download/amneziawg-go-{arch}"
@@ -43,26 +53,44 @@ MODE_KERNEL = "kernel"
 MODE_USERSPACE = "userspace"
 
 
+def _tag_for_method(method: str) -> str:
+    return WARP_TAGS.get(method, "warp-svc")
+
+
+def _is_warp_tag(tag: str) -> bool:
+    return tag.startswith("warp-") or tag == WARP_TAG
+
+
+def _is_warp_routing(rule: dict) -> bool:
+    return _is_warp_tag(rule.get("outboundTag", ""))
+
+
 def _xray_config_paths() -> list[str]:
     paths = []
     for p in (os.path.join(config.XRAY_DIR, "config.json"),
-              os.path.join(config.XRAY_DIR, "xhttp.json")):
+              os.path.join(config.XRAY_DIR, "xhttp.json"),
+              os.path.join(config.XRAY_DIR, "xray-reality.json")):
         if os.path.exists(p):
             paths.append(p)
     return paths
 
 
-def _remove_outbound() -> None:
+def _remove_outbound(method: str = "") -> None:
+    tag = _tag_for_method(method) if method else ""
     for path in _xray_config_paths():
         with open(path) as f:
             cfg = json.load(f)
-        cfg["outbounds"] = [o for o in cfg.get("outbounds", [])
-                           if o.get("tag") != WARP_TAG]
+        if tag:
+            cfg["outbounds"] = [o for o in cfg.get("outbounds", [])
+                               if o.get("tag") != tag]
+        else:
+            cfg["outbounds"] = [o for o in cfg.get("outbounds", [])
+                               if not _is_warp_tag(o.get("tag", ""))]
         cfg["inbounds"] = [i for i in cfg.get("inbounds", [])
                           if i.get("tag") != SOCKS_TAG]
         cfg["routing"]["rules"] = [
             r for r in cfg.get("routing", {}).get("rules", [])
-            if r.get("outboundTag") != WARP_TAG
+            if not _is_warp_routing(r)
         ]
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -73,11 +101,16 @@ def _add_routing_rule_if_missing(tag: str, mode: str = "Global") -> None:
         with open(path) as f:
             cfg = json.load(f)
         rules = cfg.setdefault("routing", {}).setdefault("rules", [])
-        rules[:] = [r for r in rules if r.get("outboundTag") != tag]
+        rules[:] = [r for r in rules if not _is_warp_routing(r)]
         if mode == "Global":
             rules.insert(0, {"type": "field", "port": "0-65535", "outboundTag": tag})
         elif mode == "Split":
-            rules.insert(0, {"type": "field", "domain": ["geosite:netflix", "geosite:youtube", "geosite:spotify"], "outboundTag": tag})
+            from vwn.modules._domains import list_domains
+            domains = list_domains(tag)
+            if not domains:
+                domains = ["whoer.net"]
+            domains_json = [f"domain:{d}" for d in domains]
+            rules.insert(0, {"type": "field", "domain": domains_json, "outboundTag": tag})
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -184,7 +217,7 @@ def _pick_endpoint(prefer_port: int = 2408) -> str:
     return f"{sorted_ips[0]}:{prefer_port}"
 
 
-def _apply_socks_inbound(path: str, port: int = 10808) -> None:
+def _apply_socks_inbound(path: str, port: int = 10808, warp_tag: str = "") -> None:
     """Добавить SOCKS inbound + routing rule в конфиг Xray."""
     WARP_SOCKS_PORTS = {10808, 10809}
     with open(path) as f:
@@ -201,15 +234,16 @@ def _apply_socks_inbound(path: str, port: int = 10808) -> None:
     cfg["inbounds"].append(socks_inbound)
     rules = cfg.setdefault("routing", {}).setdefault("rules", [])
     rules = [r for r in rules if r.get("inboundTag") != [SOCKS_TAG]]
-    rules.insert(0, {"type": "field", "inboundTag": [SOCKS_TAG], "outboundTag": WARP_TAG})
+    rules.insert(0, {"type": "field", "inboundTag": [SOCKS_TAG], "outboundTag": warp_tag})
     cfg["routing"]["rules"] = rules
     with open(path, "w") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 
 def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
+    tag = _tag_for_method("native")
     outbound = {
-        "tag": WARP_TAG, "protocol": "wireguard",
+        "tag": tag, "protocol": "wireguard",
         "settings": {
             "secretKey": private_key,
             "address": [f"{ipv4}/32"],
@@ -221,11 +255,11 @@ def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
-        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != WARP_TAG]
+        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != tag]
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-        _apply_socks_inbound(path, 10808)
+        _apply_socks_inbound(path, 10808, tag)
 
 
 def install_native() -> None:
@@ -247,7 +281,7 @@ def install_native() -> None:
 
 
 def remove_native() -> None:
-    _remove_outbound()
+    _remove_outbound("native")
     for f in (WARP_KEYS_FILE, WGCF_BIN):
         if os.path.exists(f):
             os.remove(f)
@@ -413,8 +447,9 @@ WantedBy=multi-user.target
 
 
 def _apply_amnezia_outbound() -> None:
+    tag = _tag_for_method("amnezia")
     outbound = {
-        "tag": WARP_TAG, "protocol": "freedom",
+        "tag": tag, "protocol": "freedom",
         "settings": {},
         "streamSettings": {"sockopt": {"interface": AWG_IFACE}},
     }
@@ -422,11 +457,11 @@ def _apply_amnezia_outbound() -> None:
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
-        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != WARP_TAG]
+        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != tag]
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-        _apply_socks_inbound(path, 10809)
+        _apply_socks_inbound(path, 10809, tag)
 
 
 def _download_amneziawg_go() -> None:
@@ -479,7 +514,7 @@ def remove_amnezia() -> None:
         if os.path.exists(b):
             os.remove(b)
     shell.run(["systemctl", "daemon-reload"], check=False)
-    _remove_outbound()
+    _remove_outbound("amnezia")
     config.vwn_conf_del("AWG_MODE")
 
 
@@ -537,8 +572,9 @@ def _config_warp_svc() -> None:
 
 
 def _apply_warp_svc_outbound() -> None:
+    tag = _tag_for_method("warp-svc")
     outbound = {
-        "tag": WARP_TAG, "protocol": "freedom",
+        "tag": tag, "protocol": "freedom",
         "settings": {},
         "streamSettings": {"sockopt": {"dialerProxy": "socks5://127.0.0.1:40000"}},
     }
@@ -546,7 +582,7 @@ def _apply_warp_svc_outbound() -> None:
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
-        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != WARP_TAG]
+        cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != tag]
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -574,7 +610,7 @@ def remove_warp_svc() -> None:
               "/usr/share/keyrings/cloudflare-warp.gpg"):
         if os.path.exists(f):
             os.remove(f)
-    _remove_outbound()
+    _remove_outbound("warp-svc")
 
 
 # ── Unified API ────────────────────────────────────────────────────
@@ -602,9 +638,43 @@ def remove() -> None:
     remover()
     config.vwn_conf_del("WARP_METHOD")
     config.vwn_conf_del("WARP_ENDPOINT")
+    config.vwn_conf_del("WARP_TUNNEL_MODE")
     shell.run(["systemctl", "restart", "xray-reality", "xray-ws", "xray-xhttp"],
               check=False)
     print("  WARP removed")
+
+
+def reapply_warp() -> None:
+    """Повторно применить WARP outbound ко всем конфигам (после provision)."""
+    method = config.vwn_conf_get("WARP_METHOD") or ""
+    if not method:
+        return
+    tag = _tag_for_method(method)
+    if method == "native":
+        keys = _load_saved_keys()
+        endpoint = config.vwn_conf_get("WARP_ENDPOINT") or ""
+        if keys and endpoint:
+            _apply_native_outbound(keys["WARP_PRIVATE_KEY"], keys["WARP_IPV4"], endpoint)
+    elif method == "amnezia":
+        _apply_amnezia_outbound()
+    elif method == "warp-svc":
+        _apply_warp_svc_outbound()
+    mode = config.vwn_conf_get("WARP_TUNNEL_MODE") or "Global"
+    _add_routing_rule_if_missing(tag, mode)
+
+
+def _load_saved_keys() -> dict[str, str]:
+    """Прочитать сохранённые WARP-ключи из warp-keys.env."""
+    if not os.path.exists(WARP_KEYS_FILE):
+        return {}
+    keys = {}
+    with open(WARP_KEYS_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                keys[k] = v
+    return keys
 
 
 def status() -> dict:
@@ -616,17 +686,20 @@ def status() -> dict:
 
 def add_domain(domain: str) -> None:
     from vwn.modules._domains import add_domain as _ad
-    _ad(WARP_TAG, domain)
+    method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
+    _ad(_tag_for_method(method), domain)
 
 
 def remove_domain(index: int) -> None:
     from vwn.modules._domains import remove_domain as _rd
-    _rd(WARP_TAG, index)
+    method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
+    _rd(_tag_for_method(method), index)
 
 
 def list_domains() -> list[str]:
     from vwn.modules._domains import list_domains as _ld
-    return _ld(WARP_TAG)
+    method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
+    return _ld(_tag_for_method(method))
 
 
 def check_ip() -> dict:
@@ -698,4 +771,3 @@ def upgrade() -> None:
         shell.run(["systemctl", "restart", "warp-svc"], check=False)
     shell.run(["systemctl", "restart", "xray-reality", "xray-ws", "xray-xhttp"],
               check=False)
-

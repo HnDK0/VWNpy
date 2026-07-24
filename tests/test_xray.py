@@ -37,7 +37,7 @@ def test_reality_config_shape():
     assert ib["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"
     assert ib["streamSettings"]["realitySettings"]["serverNames"] == ["vpn.example.com"]
     assert c["outbounds"][-1]["protocol"] == "blackhole"   # общие outbounds
-    assert "warp" in [o["tag"] for o in c["outbounds"]]
+    assert "warp-svc" in [o["tag"] for o in c["outbounds"]]
     assert ib["sniffing"]["routeOnly"] is True
     assert ib["streamSettings"]["sockopt"]["tcpCongestion"] == "bbr"
 
@@ -109,3 +109,19 @@ def test_provision_rejects_bad_domain(paths):
     with pytest.raises(ValueError):
         xray.provision_configs("bad domain", "https://x.com/", "microsoft.com:443",
                                private_key="PRIV", server_name="x.com")
+
+
+def test_reapply_warp_restores_outbound(paths):
+    """reapply_warp() is a no-op when no WARP is active; provision leaves outbound."""
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    assert "warp-svc" in [o["tag"] for o in rc["outbounds"]]
+
+    # Reapply with no active WARP → no-op, outbound stays from provision
+    from vwn.modules.warp import reapply_warp
+    reapply_warp()
+    rc2 = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    assert "warp-svc" in [o["tag"] for o in rc2["outbounds"]]

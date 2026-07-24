@@ -41,7 +41,7 @@ def _outbounds() -> list:
     return [
         {"tag": "dns-out", "protocol": "dns"},
         {"tag": "free", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
-        {"tag": "warp", "protocol": "socks",
+        {"tag": "warp-svc", "protocol": "socks",
          "settings": {"servers": [{"address": "127.0.0.1", "port": 40000}]}},
         {"tag": "psiphon", "protocol": "socks",
          "settings": {"servers": [{"address": "127.0.0.1", "port": 40002}]}},
@@ -456,6 +456,10 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
     config.vwn_conf_set("SHORT_ID", short_id)
 
     units = write_xray_units()
+
+    from vwn.modules.warp import reapply_warp
+    reapply_warp()
+
     return {
         "uuid": uuid_, "ws_path": ws_path, "xhttp_path": xhttp_path,
         "reality_port": reality_port, "short_id": short_id,

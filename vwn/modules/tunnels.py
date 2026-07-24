@@ -10,6 +10,12 @@ from vwn.core import shell
 from vwn.core.color import C
 
 
+def _match_tunnel_tag(outbound_tag: str, tag: str) -> bool:
+    if tag == "warp":
+        return outbound_tag.startswith("warp-") or outbound_tag == "warp"
+    return outbound_tag == tag
+
+
 def get_tunnel_mode(cfg: dict, tag: str) -> str:
     """Определить режим туннеля по конфигу Xray (dict).
 
@@ -18,7 +24,7 @@ def get_tunnel_mode(cfg: dict, tag: str) -> str:
     """
     rules = (cfg.get("routing", {}) or {}).get("rules", []) or []
     for rule in rules:
-        if rule.get("outboundTag") != tag:
+        if not _match_tunnel_tag(rule.get("outboundTag", ""), tag):
             continue
         if rule.get("inboundTag"):
             continue
