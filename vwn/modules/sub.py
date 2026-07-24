@@ -293,6 +293,7 @@ def build_user_sub_file(
             connect_host = ch
     except (OSError, ValueError):
         pass
+    cdn_ip = connect_host if connect_host != domain else ""
 
     lines: list[str] = []
 
@@ -333,7 +334,7 @@ def build_user_sub_file(
     )
     build_user_html_page(
         template_path, html_path, uuid_val, label, sub_url, lines,
-        domain=domain, server_ip=server_ip,
+        domain=domain, server_ip=server_ip, cdn_ip=cdn_ip,
     )
 
 
