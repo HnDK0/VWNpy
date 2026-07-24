@@ -39,7 +39,11 @@ if ! command -v python3 &>/dev/null; then
   echo ">>> Установка python3..."
   apt-get update -qq && apt-get install -y -qq python3 python3-pip
 fi
-command -v pip3 &>/dev/null || python3 -m pip install --upgrade pip -q
+if ! command -v pip3 &>/dev/null; then
+  echo ">>> Установка pip3..."
+  apt-get install -y -qq python3-pip
+fi
+python3 -m pip install --upgrade pip -q
 
 # 2. Скачать и установить wheel (или из локальной папки)
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
