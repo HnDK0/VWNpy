@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import time
@@ -69,19 +70,22 @@ def _write_config(country: str = "", upstream: str = "") -> None:
         "PropagationChannelId": "FFFFFFFFFFFFFFFF",
         "SponsorId": "FFFFFFFFFFFFFFFF",
         "LocalSocksProxyPort": PORT,
-        "LocalHttpProxyPort": 0,
-        "DisableLocalSocksProxy": False,
         "DisableLocalHTTPProxy": True,
         "EgressRegion": country,
         "DataRootDirectory": DATA_DIR,
-        "RemoteServerListDownloadFilename": f"{DATA_DIR}/remote_server_list",
-        "RemoteServerListUrl": SERVER_LIST_URL,
         "RemoteServerListSignaturePublicKey": SERVER_LIST_KEY,
-        "ClientPlatform": "Android_4.0.4_com.example.exampleClientLibraryApp",
+        "RemoteServerListURLs": [
+            {
+                "URL": base64.b64encode(SERVER_LIST_URL.encode()).decode(),
+                "OnlyAfterAttempts": 0,
+                "SkipVerify": False,
+            }
+        ],
+        "RemoteServerListDownloadFilename": "remote_server_list",
         "NetworkID": "default",
-        "TunnelProtocol": "",
         "ConnectionWorkerPoolSize": 10,
         "LimitTunnelProtocols": [],
+        "EmitDiagnosticNotices": True,
     }
     if upstream:
         cfg["UpstreamProxyURL"] = upstream

@@ -60,6 +60,11 @@ def test_install_downloads_binary(monkeypatch, tmp_path):
         cfg = json.load(f)
     assert cfg["LocalSocksProxyPort"] == 40002
     assert "UpstreamProxyURL" not in cfg
+    assert "RemoteServerListURLs" in cfg
+    assert cfg["RemoteServerListURLs"][0]["OnlyAfterAttempts"] == 0
+    assert "RemoteServerListUrl" not in cfg
+    assert cfg["RemoteServerListDownloadFilename"] == "remote_server_list"
+    assert cfg["EmitDiagnosticNotices"] is True
 
     # verify mode file
     assert open(psiphon.MODE_FILE).read().strip() == "plain"
@@ -97,6 +102,8 @@ def test_install_warp_mode(monkeypatch, tmp_path):
         cfg = json.load(f)
     assert cfg["EgressRegion"] == "DE"
     assert cfg["UpstreamProxyURL"] == "socks5://127.0.0.1:40000"
+    assert "RemoteServerListURLs" in cfg
+    assert "RemoteServerListUrl" not in cfg
     assert open(psiphon.MODE_FILE).read().strip() == "warp"
     assert open(psiphon.COUNTRY_FILE).read().strip() == "DE"
 
