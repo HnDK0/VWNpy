@@ -43,9 +43,15 @@ if ! command -v pip3 &>/dev/null; then
   echo ">>> Установка pip3..."
   apt-get install -y -qq python3-pip
 fi
-python3 -m pip install --upgrade pip -q
+PIP_ROOT_USER_ACTION=ignore python3 -m pip install --upgrade pip -q
 
-# 2. Скачать и установить wheel (или из локальной папки)
+# 2. curl + unzip (нужны для скачивания wheel)
+if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null; then
+  echo ">>> Установка curl, unzip..."
+  apt-get install -y -qq curl unzip
+fi
+
+# 3. Скачать и установить wheel (или из локальной папки)
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -f "$SRC_DIR/dist/"*.whl ]]; then

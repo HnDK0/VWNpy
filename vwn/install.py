@@ -132,7 +132,9 @@ def run_install(argv: "list | None" = None) -> None:
     shell.run_task("Системный DNS", system.setup_system_dns)
     shell.run_task("Swap при нехватке RAM", system.setup_swap)
 
-    for pkg in ("curl", "jq", "socat", "qrencode", "python3"):
+    for pkg in ("curl", "jq", "socat", "qrencode", "python3", "unzip",
+                "openssl", "e2fsprogs", "netcat-openbsd",
+                "gnupg2", "lsb-release", "software-properties-common"):
         shell.run_task(f"Установка {pkg}", lambda p=pkg: system.install_package(p))
 
     shell.run_task("Установка nginx 1.30+ (из исходников)",
