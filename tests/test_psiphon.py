@@ -15,10 +15,10 @@ def test_status_inactive(monkeypatch):
 
 def test_status_active(monkeypatch, tmp_path):
     monkeypatch.setattr(psiphon.shell, "service_active", lambda s: True)
-    monkeypatch.setattr(psiphon, "CONFIG", str(tmp_path / "psiphon.json"))
+    monkeypatch.setattr(psiphon, "COUNTRY_FILE", str(tmp_path / "psiphon_country"))
     monkeypatch.setattr(psiphon, "MODE_FILE", str(tmp_path / "psiphon_mode"))
-    with open(psiphon.CONFIG, "w") as f:
-        json.dump({"EgressRegion": "DE"}, f)
+    with open(psiphon.COUNTRY_FILE, "w") as f:
+        f.write("DE\n")
     with open(psiphon.MODE_FILE, "w") as f:
         f.write("warp")
     s = psiphon.status()
@@ -32,6 +32,7 @@ def test_install_downloads_binary(monkeypatch, tmp_path):
     monkeypatch.setattr(psiphon, "CONFIG", str(tmp_path / "psiphon.json"))
     monkeypatch.setattr(psiphon, "SERVICE", str(tmp_path / "psiphon.service"))
     monkeypatch.setattr(psiphon, "MODE_FILE", str(tmp_path / "psiphon_mode"))
+    monkeypatch.setattr(psiphon, "COUNTRY_FILE", str(tmp_path / "psiphon_country"))
     monkeypatch.setattr(psiphon, "DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(psiphon, "LOG_DIR", str(tmp_path / "log"))
     monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
@@ -63,6 +64,9 @@ def test_install_downloads_binary(monkeypatch, tmp_path):
     # verify mode file
     assert open(psiphon.MODE_FILE).read().strip() == "plain"
 
+    # verify country file
+    assert open(psiphon.COUNTRY_FILE).read().strip() == ""
+
     # verify service written
     assert os.path.isfile(psiphon.SERVICE)
 
@@ -72,6 +76,7 @@ def test_install_warp_mode(monkeypatch, tmp_path):
     monkeypatch.setattr(psiphon, "CONFIG", str(tmp_path / "psiphon.json"))
     monkeypatch.setattr(psiphon, "SERVICE", str(tmp_path / "psiphon.service"))
     monkeypatch.setattr(psiphon, "MODE_FILE", str(tmp_path / "psiphon_mode"))
+    monkeypatch.setattr(psiphon, "COUNTRY_FILE", str(tmp_path / "psiphon_country"))
     monkeypatch.setattr(psiphon, "DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(psiphon, "LOG_DIR", str(tmp_path / "log"))
     monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
@@ -93,6 +98,7 @@ def test_install_warp_mode(monkeypatch, tmp_path):
     assert cfg["EgressRegion"] == "DE"
     assert cfg["UpstreamProxyURL"] == "socks5://127.0.0.1:40000"
     assert open(psiphon.MODE_FILE).read().strip() == "warp"
+    assert open(psiphon.COUNTRY_FILE).read().strip() == "DE"
 
 
 def test_add_xray_outbound(monkeypatch, tmp_path):
@@ -136,11 +142,12 @@ def test_remove(monkeypatch, tmp_path):
     monkeypatch.setattr(psiphon, "BIN", str(tmp_path / "psiphon-tunnel-core"))
     monkeypatch.setattr(psiphon, "CONFIG", str(tmp_path / "psiphon.json"))
     monkeypatch.setattr(psiphon, "MODE_FILE", str(tmp_path / "psiphon_mode"))
+    monkeypatch.setattr(psiphon, "COUNTRY_FILE", str(tmp_path / "psiphon_country"))
     monkeypatch.setattr(psiphon, "DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(psiphon, "LOG_DIR", str(tmp_path / "log"))
     monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
     # create dummy files to remove
-    for p in [psiphon.SERVICE, psiphon.BIN, psiphon.CONFIG, psiphon.MODE_FILE]:
+    for p in [psiphon.SERVICE, psiphon.BIN, psiphon.CONFIG, psiphon.MODE_FILE, psiphon.COUNTRY_FILE]:
         with open(p, "w") as f:
             f.write("x")
     os.makedirs(psiphon.DATA_DIR, exist_ok=True)
@@ -156,6 +163,7 @@ def test_remove(monkeypatch, tmp_path):
 
     assert not os.path.isfile(psiphon.SERVICE)
     assert not os.path.isfile(psiphon.BIN)
+    assert not os.path.isfile(psiphon.COUNTRY_FILE)
     flat = [" ".join(c) for c in calls]
     assert any("stop" in c for c in flat)
     assert any("daemon-reload" in c for c in flat)

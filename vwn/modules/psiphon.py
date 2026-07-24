@@ -11,6 +11,7 @@ BIN = "/usr/local/bin/psiphon-tunnel-core"
 CONFIG = "/usr/local/etc/xray/psiphon.json"
 SERVICE = "/etc/systemd/system/psiphon.service"
 MODE_FILE = "/usr/local/etc/xray/psiphon_mode"
+COUNTRY_FILE = "/usr/local/etc/xray/psiphon_country"
 DATA_DIR = "/var/lib/psiphon"
 LOG_DIR = "/var/log/psiphon"
 USER = "psiphon"
@@ -86,13 +87,16 @@ def _write_config(country: str = "", upstream: str = "") -> None:
         cfg["UpstreamProxyURL"] = upstream
     with open(CONFIG, "w") as f:
         json.dump(cfg, f, indent=2)
+    with open(COUNTRY_FILE, "w") as f:
+        f.write(country + "\n")
 
 
 def _setup_service() -> None:
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
-    shell.run(["useradd", "-r", "-s", "/sbin/nologin", "-d", DATA_DIR, USER],
-              check=False)
+    if shell.run(["id", USER], check=False, capture=True).returncode != 0:
+        shell.run(["useradd", "-r", "-s", "/sbin/nologin", "-d", DATA_DIR, USER],
+                  check=False)
     shell.run(["chown", "-R", f"{USER}:{USER}", DATA_DIR], check=False)
     shell.run(["chown", "-R", f"{USER}:{USER}", LOG_DIR], check=False)
     unit = f"""[Unit]
@@ -140,7 +144,7 @@ def install(country: str = "", tunnel_mode: str = "plain") -> None:
 def remove() -> None:
     shell.run(["systemctl", "stop", "psiphon"], check=False)
     shell.run(["systemctl", "disable", "psiphon"], check=False)
-    for f in [SERVICE, BIN, CONFIG, MODE_FILE]:
+    for f in [SERVICE, BIN, CONFIG, MODE_FILE, COUNTRY_FILE]:
         if os.path.isfile(f):
             os.remove(f)
     for d in [DATA_DIR, LOG_DIR]:
@@ -172,12 +176,8 @@ def list_domains() -> list[str]:
 def status() -> dict:
     active = shell.service_active("psiphon")
     country = ""
-    if os.path.isfile(CONFIG):
-        try:
-            with open(CONFIG) as f:
-                country = json.load(f).get("EgressRegion", "")
-        except (OSError, json.JSONDecodeError):
-            pass
+    if os.path.isfile(COUNTRY_FILE):
+        country = open(COUNTRY_FILE).read().strip()
     mode = "plain"
     if os.path.isfile(MODE_FILE):
         mode = open(MODE_FILE).read().strip()

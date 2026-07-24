@@ -251,7 +251,8 @@ def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
             "mtu": 1280,
         },
     }
-    for path in _xray_config_paths():
+    paths = _xray_config_paths()
+    for path in paths:
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
@@ -259,7 +260,8 @@ def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-        _apply_socks_inbound(path, 10808, tag)
+    if paths:
+        _apply_socks_inbound(paths[0], 10808, tag)
 
 
 def install_native() -> None:
@@ -453,7 +455,8 @@ def _apply_amnezia_outbound() -> None:
         "settings": {},
         "streamSettings": {"sockopt": {"interface": AWG_IFACE}},
     }
-    for path in _xray_config_paths():
+    paths = _xray_config_paths()
+    for path in paths:
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
@@ -461,7 +464,8 @@ def _apply_amnezia_outbound() -> None:
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-        _apply_socks_inbound(path, 10809, tag)
+    if paths:
+        _apply_socks_inbound(paths[0], 10809, tag)
 
 
 def _download_amneziawg_go() -> None:
@@ -731,10 +735,14 @@ def check_ip() -> dict:
         err = (r.stderr or "").strip()
         result["error"] = err[:200] if err else f"exit code {r.returncode}"
     if result["warp"]:
-        r = _sp.run(["curl", "-sS", "--max-time", "10",
-                     f"https://ip-api.com/csv/{result['warp']}?fields=countryCode"],
-                    capture_output=True, text=True, timeout=15)
-        result["country"] = r.stdout.strip().upper()[:2] if r.returncode == 0 else ""
+        try:
+            r = _sp.run(["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb",
+                         "--ip", result["warp"]],
+                        capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            return result
+        m = __import__("re").search(r'"iso_code":\s+"([A-Z]{2})"', r.stdout or "")
+        result["country"] = m.group(1) if m else ""
     return result
 
 

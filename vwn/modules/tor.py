@@ -151,10 +151,14 @@ def check_ip() -> dict:
                        capture_output=True, text=True, timeout=20)
     result["tor"] = r.stdout.strip() if r.returncode == 0 else ""
     if result["tor"]:
-        r = subprocess.run(["curl", "-sS", "--max-time", "10",
-                            f"https://ip-api.com/csv/{result['tor']}?fields=countryCode"],
-                           capture_output=True, text=True, timeout=15)
-        result["country"] = r.stdout.strip().upper()[:2] if r.returncode == 0 else ""
+        try:
+            r = subprocess.run(["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb",
+                               "--ip", result["tor"]],
+                              capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            return result
+        m = __import__("re").search(r'"iso_code":\s+"([A-Z]{2})"', r.stdout or "")
+        result["country"] = m.group(1) if m else ""
     return result
 
 

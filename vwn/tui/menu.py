@@ -507,7 +507,7 @@ def manage_ws_xhttp() -> None:
                 if ce and ck:
                     _run_task("SSL ACME CF", lambda: renew_ssl(domain, "cf", ce, ck))
         elif val == "11":
-            _run_cmd("systemctl restart xray-ws xray-xhttp")
+            _run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
         elif val == "12":
             _run_cmd("journalctl -u xray-ws -n 50 --no-pager")
         elif val == "13":
@@ -638,15 +638,15 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                 offset += 1
             if val == str(offset):
                 _switch_tunnel_mode(tag, "Global")
-                _run_cmd("systemctl restart xray-ws xray-xhttp")
+                _run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
                 wait_key()
             elif val == str(offset + 1):
                 _switch_tunnel_mode(tag, "Split")
-                _run_cmd("systemctl restart xray-ws xray-xhttp")
+                _run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
                 wait_key()
             elif val == str(offset + 2):
                 _switch_tunnel_mode(tag, "OFF")
-                _run_cmd("systemctl restart xray-ws xray-xhttp")
+                _run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
                 wait_key()
             elif extra and val.isdigit() and extra_start <= int(val) < extra_start + len(extra):
                 label = list(extra.keys())[int(val) - extra_start]
@@ -656,7 +656,15 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                 _run_cmd(f"systemctl restart {svc}")
                 wait_key()
             elif svc and val == str(offset + 4):
-                _run_cmd(f"journalctl -u {svc} -n 50 --no-pager")
+                if svc == "psiphon.service":
+                    import os as _os
+                    log = "/var/log/psiphon/psiphon.log"
+                    if _os.path.isfile(log):
+                        _run_cmd(f"tail -n 50 {log}")
+                    else:
+                        _run_cmd(f"journalctl -u {svc} -n 50 --no-pager")
+                else:
+                    _run_cmd(f"journalctl -u {svc} -n 50 --no-pager")
                 wait_key()
 
 
@@ -689,7 +697,7 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
                 if _match_tunnel_tag(o.get("tag", ""), "warp"):
                     actual_tag = o["tag"]
                     break
-        rules = [r for r in rules if not _match_tunnel_tag(r.get("outboundTag", ""), tag)]
+        rules = [r for r in rules if not (_match_tunnel_tag(r.get("outboundTag", ""), tag) and "inboundTag" not in r)]
         if mode == "Global":
             rules = [r for r in rules
                      if not (_is_any_tunnel_tag(r.get("outboundTag", ""))
@@ -1387,12 +1395,25 @@ def run_menu() -> None:
                 console.print(f"  [bright_green]Страна: {c or 'авто'}[/]")
             def _ps_check_ip():
                 import subprocess
+                from vwn.core.system import get_server_ip
+                server_ip = get_server_ip()
+                console.print(f"  Сервер IP: {server_ip or 'N/A'}")
                 r = subprocess.run(["curl", "-sS", "--max-time", "15",
                                     "--socks5-hostname", "127.0.0.1:40002",
                                     "https://api.ipify.org"],
                                    capture_output=True, text=True, timeout=20)
                 ip = r.stdout.strip() if r.returncode == 0 else "N/A"
                 console.print(f"  Psiphon IP: {ip}")
+                if r.returncode == 0 and ip:
+                    try:
+                        r2 = subprocess.run(["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb",
+                                             "--ip", ip],
+                                            capture_output=True, text=True, check=False)
+                    except FileNotFoundError:
+                        return
+                    m = __import__("re").search(r'"iso_code":\s+"([A-Z]{2})"', r2.stdout or "")
+                    country = m.group(1) if m else "N/A"
+                    console.print(f"  Выход geo: {country}")
             manage_tunnel("Psiphon", "psiphon.service", "psiphon", has_install=True,
                           extra={
                               "Сменить страну": _ps_change_country,
