@@ -35,15 +35,31 @@ SERVER_LIST_KEY = ("MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEA"
                    "r68iCID+rsCAQM=")
 
 
+COUNTRIES = [
+    ("AU", "Australia"), ("AT", "Austria"), ("BR", "Brazil"),
+    ("BG", "Bulgaria"), ("CA", "Canada"), ("CZ", "Czech Republic"),
+    ("EE", "Estonia"), ("FI", "Finland"), ("FR", "France"),
+    ("DE", "Germany"), ("HU", "Hungary"), ("IN", "India"),
+    ("IE", "Ireland"), ("IL", "Israel"), ("IT", "Italy"),
+    ("JP", "Japan"), ("LV", "Latvia"), ("LT", "Lithuania"),
+    ("MY", "Malaysia"), ("NL", "Netherlands"), ("NO", "Norway"),
+    ("PL", "Poland"), ("RO", "Romania"), ("SG", "Singapore"),
+    ("SK", "Slovakia"), ("ES", "Spain"), ("SE", "Sweden"),
+    ("CH", "Switzerland"), ("UA", "Ukraine"),
+    ("GB", "United Kingdom"), ("US", "United States"),
+]
+
+
 def _bin_url() -> str:
     arch = shell.run(["uname", "-m"], capture=True).stdout.strip()
-    arch_map = {"x86_64": "x86_64", "aarch64": "arm64", "armv7l": "arm"}
-    a = arch_map.get(arch)
-    if not a:
-        raise RuntimeError(f"Unsupported arch: {arch}")
-    return (f"https://github.com/Psiphon-Labs/"
-            f"psiphon-tunnel-core-binaries/e1a5c6e338275fdfc0c596809a5fd3193ab2cd2d/"
-            f"linux/psiphon-tunnel-core-{a}")
+    if arch != "x86_64":
+        raise RuntimeError(
+            f"Psiphon tunnel-core доступен только для x86_64, "
+            f"ваша архитектура: {arch}"
+        )
+    return ("https://github.com/Psiphon-Labs/"
+            "psiphon-tunnel-core-binaries/raw/master/linux/"
+            "psiphon-tunnel-core-x86_64")
 
 
 def _write_config(country: str = "", upstream: str = "") -> None:

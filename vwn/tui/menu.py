@@ -579,17 +579,35 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                 from vwn.modules.warp import install as warp_install
                 _run_task("Установка WARP", lambda: warp_install(method))
             elif tag == "psiphon":
-                console.print("  Страна (2 буквы, пусто=авто):")
-                country = input("> ").strip().upper()[:2]
-                console.print("  Режим туннеля: 1.plain  2.warp")
+                from vwn.modules.psiphon import COUNTRIES as PS_COUNTRIES
+                for i, (code, name) in enumerate(PS_COUNTRIES, 1):
+                    console.print(f"    {i:>2}. {code} — {name}")
+                console.print("  Номер страны (пусто=авто):")
+                cn = input("> ").strip()
+                country = ""
+                if cn.isdigit() and 1 <= int(cn) <= len(PS_COUNTRIES):
+                    country = PS_COUNTRIES[int(cn) - 1][0]
+                elif cn:
+                    country = cn.upper()[:2]
+                console.print("  Режим туннеля:")
+                console.print("    1. Plain  — прямое подключение к Psiphon")
+                console.print("    2. Warp   — Psiphon поверх WARP")
                 tm = input("> ").strip()
                 tmode = "warp" if tm == "2" else "plain"
                 from vwn.modules.psiphon import install as ps_install
                 _run_task("Установка Psiphon",
                           lambda: ps_install(country, tmode))
             elif tag == "tor":
-                console.print("  Страна (2 буквы, пусто=авто):")
-                country = input("> ").strip().upper()[:2]
+                from vwn.modules.tor import COUNTRIES as TOR_COUNTRIES
+                for i, (code, name) in enumerate(TOR_COUNTRIES, 1):
+                    console.print(f"    {i:>2}. {code} — {name}")
+                console.print("  Номер страны (пусто=авто):")
+                cn = input("> ").strip()
+                country = ""
+                if cn.isdigit() and 1 <= int(cn) <= len(TOR_COUNTRIES):
+                    country = TOR_COUNTRIES[int(cn) - 1][0]
+                elif cn:
+                    country = cn.upper()[:2]
                 from vwn.modules.tor import install as tor_install
                 _run_task("Установка Tor",
                           lambda: tor_install(country))
@@ -1348,8 +1366,16 @@ def run_menu() -> None:
                     _rd(int(n) - 1)
                     console.print("  [bright_green]Удалён[/]")
             def _ps_change_country():
-                console.print("  Страна (2 буквы, пусто=авто):")
-                c = input("> ").strip().upper()[:2]
+                from vwn.modules.psiphon import COUNTRIES as PS_COUNTRIES
+                for i, (code, name) in enumerate(PS_COUNTRIES, 1):
+                    console.print(f"    {i:>2}. {code} — {name}")
+                console.print("  Номер страны (пусто=авто):")
+                cn = input("> ").strip()
+                c = ""
+                if cn.isdigit() and 1 <= int(cn) <= len(PS_COUNTRIES):
+                    c = PS_COUNTRIES[int(cn) - 1][0]
+                elif cn:
+                    c = cn.upper()[:2]
                 from vwn.modules.psiphon import _write_config as _wc
                 _wc(c, "")
                 from vwn.modules.psiphon import MODE_FILE
@@ -1396,9 +1422,16 @@ def run_menu() -> None:
                     _rd(int(n) - 1)
                     console.print("  [bright_green]Удалён[/]")
             def _tor_change_country():
-                from vwn.modules.tor import change_country as _cc
-                console.print("  Страна (2 буквы, пусто=авто):")
-                c = input("> ").strip().upper()[:2]
+                from vwn.modules.tor import COUNTRIES as TOR_COUNTRIES, change_country as _cc
+                for i, (code, name) in enumerate(TOR_COUNTRIES, 1):
+                    console.print(f"    {i:>2}. {code} — {name}")
+                console.print("  Номер страны (пусто=авто):")
+                cn = input("> ").strip()
+                c = ""
+                if cn.isdigit() and 1 <= int(cn) <= len(TOR_COUNTRIES):
+                    c = TOR_COUNTRIES[int(cn) - 1][0]
+                elif cn:
+                    c = cn.upper()[:2]
                 _cc(c)
                 console.print(f"  [bright_green]Страна: {c or 'авто'}[/]")
             def _tor_check_ip():
