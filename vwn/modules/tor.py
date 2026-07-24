@@ -81,10 +81,13 @@ def install(country: str = "") -> None:
     _write_config(country)
     _runcmd(["systemctl", "enable", "tor"])
     _runcmd(["systemctl", "restart", "tor"])
+    for _ in range(6):
+        if _runcmd(["sh", "-c", f"ss -tlnp | grep -q :{PORT}"], check=False).returncode == 0:
+            break
+        time.sleep(2)
     add_outbound(TAG, "socks", PORT)
     for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
         _runcmd(["systemctl", "restart", svc], check=False)
-    time.sleep(3)
 
 
 def upgrade() -> None:
@@ -141,15 +144,21 @@ def renew_circuit() -> None:
 
 def check_ip() -> dict:
     import subprocess
-    result = {"direct": "", "tor": "", "country": ""}
+    result = {"direct": "", "tor": "", "country": "", "error": ""}
     r = subprocess.run(["curl", "-sS", "--max-time", "15", "https://api.ipify.org"],
                        capture_output=True, text=True, timeout=20)
     result["direct"] = r.stdout.strip() if r.returncode == 0 else ""
-    r = subprocess.run(["curl", "-sS", "--max-time", "15",
-                        "--socks5-hostname", f"127.0.0.1:{PORT}",
-                        "https://api.ipify.org"],
-                       capture_output=True, text=True, timeout=20)
-    result["tor"] = r.stdout.strip() if r.returncode == 0 else ""
+    for attempt in range(3):
+        r = subprocess.run(["curl", "-sS", "--max-time", "15",
+                            "--socks5-hostname", f"127.0.0.1:{PORT}",
+                            "https://api.ipify.org"],
+                           capture_output=True, text=True, timeout=20)
+        if r.returncode == 0:
+            result["tor"] = r.stdout.strip()
+            break
+        result["error"] = r.stderr.strip()[:200] if r.stderr.strip() else f"curl exit {r.returncode}"
+        if attempt < 2:
+            time.sleep(3)
     if result["tor"]:
         try:
             r = subprocess.run(["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb",

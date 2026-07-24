@@ -120,6 +120,10 @@ WantedBy=multi-user.target
     shell.run(["systemctl", "daemon-reload"], check=False)
     shell.run(["systemctl", "enable", "psiphon"], check=False)
     shell.run(["systemctl", "restart", "psiphon"], check=False)
+    for _ in range(6):
+        if shell.run(["sh", "-c", f"ss -tlnp | grep -q :{PORT}"], check=False).returncode == 0:
+            break
+        time.sleep(2)
 
 
 

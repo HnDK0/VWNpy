@@ -68,6 +68,7 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
         config_path = os.path.join(config.XRAY_DIR, "config.json")
         mode = get_tunnel_mode_from_file(config_path, tag)
         active = shell.service_active(svc) if svc else False
+        country = ""
         if tag == "warp":
             from vwn.modules.warp import status as warp_st
             ws = warp_st()
@@ -76,12 +77,14 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
             from vwn.modules.psiphon import status as ps_st
             ps = ps_st()
             active = ps["active"]
+            country = ps.get("country", "")
         elif tag == "tor":
             from vwn.modules.tor import status as tor_st
             ts = tor_st()
             active = ts["active"]
+            country = ts.get("country", "")
         console.print(f"\n[bold]{name}[/]")
-        console.print(f"  Статус: {render_tunnel_status(name, mode, active)}")
+        console.print(f"  Статус: {render_tunnel_status(name, mode, active, country)}")
         idx = 1
         if has_install:
             console.print(f"  {idx}. Установить")
@@ -174,10 +177,10 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                 label = list(extra.keys())[int(val) - extra_start]
                 extra[label]()
                 wait_key()
-            elif svc and val == str(offset + 3):
+            elif svc and val == str(offset + 3 + (len(extra) if extra else 0)):
                 run_cmd(f"systemctl restart {svc}")
                 wait_key()
-            elif svc and val == str(offset + 4):
+            elif svc and val == str(offset + 4 + (len(extra) if extra else 0)):
                 if svc == "psiphon.service":
                     log = "/var/log/psiphon/psiphon.log"
                     if os.path.isfile(log):

@@ -180,11 +180,8 @@ def run_menu() -> None:
                           })
         elif choice == 5:
             def _ps_change_country() -> None:
-                from vwn.modules.psiphon import COUNTRIES as PS_COUNTRIES
+                from vwn.modules.psiphon import COUNTRIES as PS_COUNTRIES, MODE_FILE, _write_config as _wc
                 c = pick_country(PS_COUNTRIES)
-                from vwn.modules.psiphon import _write_config as _wc
-                _wc(c, "")
-                from vwn.modules.psiphon import MODE_FILE
                 mode = open(MODE_FILE).read().strip() if os.path.isfile(MODE_FILE) else "plain"
                 upstream = "socks5://127.0.0.1:40000" if mode == "warp" else ""
                 _wc(c, upstream)
@@ -202,6 +199,9 @@ def run_menu() -> None:
                                    capture_output=True, text=True, timeout=20)
                 ip = r.stdout.strip() if r.returncode == 0 else "N/A"
                 console.print(f"  Psiphon IP: {ip}")
+                if r.returncode != 0:
+                    err = r.stderr.strip()[:200] if r.stderr.strip() else f"curl exit {r.returncode}"
+                    console.print(f"  [red]Ошибка: {err}[/]")
                 if r.returncode == 0 and ip:
                     try:
                         r2 = subprocess.run(["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb",
@@ -230,6 +230,8 @@ def run_menu() -> None:
                 r = _ci()
                 console.print(f"  Прямой IP: {r['direct']}")
                 console.print(f"  Tor IP:    {r['tor'] or 'N/A'}")
+                if r.get("error"):
+                    console.print(f"  [red]Ошибка: {r['error']}[/]")
                 console.print(f"  Выход geo: {r['country'] or 'N/A'}")
             def _tor_renew() -> None:
                 from vwn.modules.tor import renew_circuit as _rc
@@ -294,8 +296,43 @@ def run_menu() -> None:
                                        capture_output=True, text=True, timeout=20)
                     ip = r.stdout.strip() if r.returncode == 0 else "N/A"
                     console.print(f"  Relay IP: {ip}")
+                    if r.returncode != 0:
+                        err = r.stderr.strip()[:200] if r.stderr.strip() else f"curl exit {r.returncode}"
+                        console.print(f"  [red]Ошибка: {err}[/]")
                 else:
-                    console.print(f"  [yellow]Проверка IP для {proto} не реализована[/]")
+                    from vwn.modules.relay import _build_outbound as _bo
+                    ob = _bo(s)
+                    tmp_cfg = {"log": {"loglevel": "none"},
+                               "inbounds": [{"port": 19999, "listen": "127.0.0.1",
+                                             "protocol": "socks",
+                                             "settings": {"auth": "noauth", "udp": False}}],
+                               "outbounds": [ob]}
+                    p = os.path.join("/tmp", "relay_test.json")
+                    import json
+                    with open(p, "w") as f:
+                        json.dump(tmp_cfg, f)
+                    proc = None
+                    import time
+                    try:
+                        proc = subprocess.Popen(["/usr/local/bin/xray", "run", "-config", p],
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(3)
+                        r = subprocess.run(["curl", "-sS", "--max-time", "15",
+                                            "--socks5-hostname", "127.0.0.1:19999",
+                                            "https://api.ipify.org"],
+                                           capture_output=True, text=True, timeout=20)
+                    finally:
+                        if proc:
+                            proc.kill()
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
+                    ip = r.stdout.strip() if r.returncode == 0 else "N/A"
+                    console.print(f"  Relay IP: {ip}")
+                    if r.returncode != 0:
+                        err = r.stderr.strip()[:200] if r.stderr.strip() else f"curl exit {r.returncode}"
+                        console.print(f"  [red]Ошибка: {err}[/]")
             manage_tunnel("Relay", "", "relay", has_configure=True,
                           extra={
                               "Добавить домен": lambda: add_domain_flow("relay"),

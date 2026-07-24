@@ -45,8 +45,7 @@ def get_tunnel_mode_from_file(path: str, tag: str) -> str:
     return get_tunnel_mode(cfg, tag)
 
 
-def render_tunnel_status(name: str, mode: str, active: bool) -> str:
-    """Единый формат строки статуса туннеля для меню/диагностики."""
+def render_tunnel_status(name: str, mode: str, active: bool, country: str = "") -> str:
     if not active:
         state = C["red"] + "OFF" + C["reset"]
     elif mode == "Global":
@@ -55,6 +54,8 @@ def render_tunnel_status(name: str, mode: str, active: bool) -> str:
         state = C["green"] + "ACTIVE | Split" + C["reset"]
     else:
         state = C["yellow"] + "ACTIVE | OFF" + C["reset"]
+    if country:
+        state += f" ({country})"
     return f"{name:10} : {state}"
 
 
