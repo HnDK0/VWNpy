@@ -5,7 +5,6 @@ import subprocess
 import sys
 import time
 
-from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.layout import Layout
@@ -13,9 +12,7 @@ from rich.live import Live
 from rich.text import Text
 
 from vwn.core import config, shell
-from vwn.core.color import C
-
-console = Console()
+from vwn.core.color import console
 
 
 def _b(success: bool, text: str = "") -> str:

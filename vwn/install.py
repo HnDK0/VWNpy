@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from vwn.core import cert, config, shell, system
-from vwn.core.color import C
+from vwn.core.color import C, console
 from vwn.modules import sub, xray
 from vwn.core.validate import validate_domain, validate_port, validate_url
 
@@ -116,7 +116,7 @@ def _enable_start(service: str) -> None:
 
 
 def run_install(argv: "list | None" = None) -> None:
-    print(f"{C['cyan']}=== VWNpy: установка ==={C['reset']}")
+    console.print(f"{C['cyan']}=== VWNpy: установка ==={C['reset']}")
     if not shell.is_root():
         shell.die("Запустите от имени root (sudo bash install.sh)")
 

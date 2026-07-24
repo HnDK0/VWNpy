@@ -7,6 +7,7 @@
 import json
 
 from vwn.core import shell
+from vwn.core.color import C
 
 
 def get_tunnel_mode(cfg: dict, tag: str) -> str:
@@ -40,7 +41,6 @@ def get_tunnel_mode_from_file(path: str, tag: str) -> str:
 
 def render_tunnel_status(name: str, mode: str, active: bool) -> str:
     """Единый формат строки статуса туннеля для меню/диагностики."""
-    from vwn.core.color import C
     if not active:
         state = C["red"] + "OFF" + C["reset"]
     elif mode == "Global":

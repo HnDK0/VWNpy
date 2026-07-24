@@ -1,26 +1,21 @@
-"""ANSI-цвета (без i18n — только русский вывод)."""
+"""Цветной вывод через Rich Console."""
 
-import os
+from rich.console import Console
+
+console = Console()
+_err = Console(stderr=True)
 
 _COLORS = {
-    "red": "\033[1;31m",
-    "green": "\033[1;32m",
-    "yellow": "\033[1;33m",
-    "cyan": "\033[1;36m",
-    "reset": "\033[0m",
+    "red": "[red]",
+    "green": "[green]",
+    "yellow": "[yellow]",
+    "cyan": "[cyan]",
+    "reset": "[/]",
 }
 
-
-def init_colors() -> dict:
-    """Вернуть словарь цветов; вне терминала — пустые строки."""
-    if os.isatty(1) and os.environ.get("TERM"):
-        return dict(_COLORS)
-    return {k: "" for k in _COLORS}
-
-
-C = init_colors()
+C = dict(_COLORS)
 
 
 def color(text: str, name: str) -> str:
-    """Обрамить text цветом name (red/green/yellow/cyan/reset)."""
+    """Обрамить text тегом Rich-разметки name."""
     return f"{C.get(name, '')}{text}{C['reset']}"

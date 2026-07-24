@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import sys
 
-from vwn.core.color import C
+from vwn.core.color import C, console, _err
 
 
 def run(cmd, *args, check: bool = True, capture: bool = False, **kw) -> subprocess.CompletedProcess:
@@ -48,13 +48,13 @@ def pad(text: str, width: int) -> str:
 
 def run_task(desc: str, func, *args, **kw) -> bool:
     """Запустить func с индикатором >>> [ DONE ] / [ FAIL ]."""
-    print(f"\n{C['yellow']}>>> {desc}{C['reset']}")
+    console.print(f"\n{C['yellow']}>>> {desc}{C['reset']}")
     try:
         func(*args, **kw)
-    except Exception as exc:  # noqa: BLE001 — намеренно ловим всё для индикации
-        print(f"[{C['red']} FAIL {C['reset']}] {desc}: {exc}")
+    except Exception as exc:  # noqa: BLE001 — намерено ловим всё для индикации
+        console.print(f"[{C['red']} FAIL {C['reset']}] {desc}: {exc}")
         return False
-    print(f"[{C['green']} DONE {C['reset']}] {desc}")
+    console.print(f"[{C['green']} DONE {C['reset']}] {desc}")
     return True
 
 
@@ -63,5 +63,5 @@ def is_root() -> bool:
 
 
 def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"{C['red']}ОШИБКА: {msg}{C['reset']}", file=sys.stderr)
+    _err.print(f"{C['red']}ОШИБКА: {msg}{C['reset']}")
     sys.exit(1)

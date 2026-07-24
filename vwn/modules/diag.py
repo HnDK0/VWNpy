@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from vwn.core import config, shell
-from vwn.core.color import C
+from vwn.core.color import C, console
 
 
 def _ok(tag: str, val: str = "") -> str:
@@ -104,7 +104,7 @@ def _sub_info() -> str:
 
 
 def _diag_network() -> None:
-    print("--- Network ---")
+    console.print("--- Network ---")
     domain = config.vwn_conf_get("DOMAIN")
     if domain:
         r = shell.run(["dig", "+short", "A", domain, "@8.8.8.8"],
@@ -112,28 +112,28 @@ def _diag_network() -> None:
         dns_ip = r.stdout.strip() if r.returncode == 0 else ""
         server_ip = config.vwn_conf_get("SERVER_IP") or ""
         if dns_ip and dns_ip == server_ip:
-            print(f"  DNS: {_ok(domain)} -> {dns_ip}")
+            console.print(f"  DNS: {_ok(domain)} -> {dns_ip}")
         elif dns_ip:
-            print(f"  DNS: {_warn(domain)} -> {dns_ip} (server: {server_ip})")
+            console.print(f"  DNS: {_warn(domain)} -> {dns_ip} (server: {server_ip})")
         else:
-            print(f"  DNS: {_fail(domain)} (unresolved)")
+            console.print(f"  DNS: {_fail(domain)} (unresolved)")
     for port, label in [(443, "HTTPS"), (80, "HTTP")]:
         r = shell.run(["ss", "-tlnp"], capture=True, check=False, timeout=5)
         if f":{port} " in (r.stdout or ""):
-            print(f"  Port {port} ({label}): {_ok('LISTEN')}")
+            console.print(f"  Port {port} ({label}): {_ok('LISTEN')}")
         else:
-            print(f"  Port {port} ({label}): {_fail('NOT LISTEN')}")
-    print()
+            console.print(f"  Port {port} ({label}): {_fail('NOT LISTEN')}")
+    console.print()
 
 
 def _diag_connectivity() -> None:
-    print("--- Connectivity ---")
+    console.print("--- Connectivity ---")
     r = shell.run(["curl", "-sS", "--connect-timeout", "8", "--max-time", "15",
                     "https://api.ipify.org"], capture=True, check=False, timeout=25)
     if r.returncode == 0 and r.stdout:
-        print(f"  Internet: {_ok(r.stdout.strip())}")
+        console.print(f"  Internet: {_ok(r.stdout.strip())}")
     else:
-        print(f"  Internet: {_fail('UNAVAILABLE')}")
+        console.print(f"  Internet: {_fail('UNAVAILABLE')}")
     domain = config.vwn_conf_get("DOMAIN")
     if domain:
         r = shell.run(["curl", "-sS", "--connect-timeout", "8", "--max-time", "15",
@@ -141,133 +141,133 @@ def _diag_connectivity() -> None:
                         f"https://{domain}/"], capture=True, check=False, timeout=25)
         code = r.stdout.strip() if r.returncode == 0 else "000"
         if code in ("200", "301", "302"):
-            print(f"  Domain {domain}: {_ok(f'HTTP {code}')}")
+            console.print(f"  Domain {domain}: {_ok(f'HTTP {code}')}")
         elif code == "000":
-            print(f"  Domain {domain}: {_fail('UNREACHABLE')}")
+            console.print(f"  Domain {domain}: {_fail('UNREACHABLE')}")
         else:
-            print(f"  Domain {domain}: {_warn(f'HTTP {code}')}")
-    print()
+            console.print(f"  Domain {domain}: {_warn(f'HTTP {code}')}")
+    console.print()
 
 
 def _diag_geoip() -> None:
-    print("--- GeoIP / GeoSite ---")
+    console.print("--- GeoIP / GeoSite ---")
     for f in ["/usr/local/share/xray/geoip.dat",
               "/usr/local/share/xray/geosite.dat"]:
         if os.path.isfile(f):
             size = os.path.getsize(f)
-            print(f"  {os.path.basename(f)}: {_ok(f'{size/1024:.0f} KB')}")
+            console.print(f"  {os.path.basename(f)}: {_ok(f'{size/1024:.0f} KB')}")
         else:
-            print(f"  {os.path.basename(f) if '/' not in f else os.path.basename(f)}: {_fail('MISSING')}")
-    print()
+            console.print(f"  {os.path.basename(f) if '/' not in f else os.path.basename(f)}: {_fail('MISSING')}")
+    console.print()
 
 
 def _diag_xray_test() -> None:
-    print("--- Xray Config Tests ---")
+    console.print("--- Xray Config Tests ---")
     for label, path in [("Reality", os.path.join(config.XRAY_DIR, "xray-reality.json")),
                          ("WS", os.path.join(config.XRAY_DIR, "config.json")),
                          ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json"))]:
         if not os.path.isfile(path):
-            print(f"  {label:7}: {_skip('no config')}")
+            console.print(f"  {label:7}: {_skip('no config')}")
             continue
         r = shell.run([config.XRAY_BIN, "-test", "-config", path],
                        capture=True, check=False, timeout=15)
         ok = r.returncode == 0
-        print(f"  {label:7}: {_ok('OK') if ok else _fail('FAIL')}")
+        console.print(f"  {label:7}: {_ok('OK') if ok else _fail('FAIL')}")
         if not ok:
             for line in (r.stdout or "").splitlines()[-3:]:
-                print(f"          {line}")
-    print()
+                console.print(f"          {line}")
+    console.print()
 
 
 def _diag_nginx_test() -> None:
-    print("--- Nginx Config Test ---")
+    console.print("--- Nginx Config Test ---")
     r = shell.run(["nginx", "-t"], capture=True, check=False, timeout=5)
     if r.returncode == 0:
-        print(f"  {_ok('OK')}")
+        console.print(f"  {_ok('OK')}")
     else:
-        print(f"  {_fail('FAIL')}")
+        console.print(f"  {_fail('FAIL')}")
         for line in (r.stderr or "").splitlines():
-            print(f"  {line}")
-    print()
+            console.print(f"  {line}")
+    console.print()
 
 
 def run_full_diag() -> None:
     sys.stdout.reconfigure(line_buffering=True)
-    print(f"{C['cyan']}=== Диагностика VWNpy ==={C['reset']}")
-    print()
+    console.print(f"{C['cyan']}=== Диагностика VWNpy ==={C['reset']}")
+    console.print()
 
-    print("--- Services ---")
+    console.print("--- Services ---")
     for label, svc in [("xray-reality", "xray-reality.service"),
                         ("xray-ws", "xray-ws.service"),
                         ("xray-xhttp", "xray-xhttp.service"),
                         ("nginx", "nginx.service"),
                         ("warp-svc", "warp-svc.service"),
                         ("fail2ban", "fail2ban.service")]:
-        print(_check_service(label, svc))
-    print()
+        console.print(_check_service(label, svc))
+    console.print()
 
-    print("--- Tunnels ---")
+    console.print("--- Tunnels ---")
     for label, svc in [("Psiphon", "psiphon.service"),
                         ("Tor", "tor.service")]:
-        print(_check_service(label, svc))
+        console.print(_check_service(label, svc))
     from vwn.modules.relay import status as _relay_status
     rs = _relay_status()
-    print(f"  {'Relay':16} {_ok('ON') if rs.get('configured') else _fail('OFF')}")
-    print()
+    console.print(f"  {'Relay':16} {_ok('ON') if rs.get('configured') else _fail('OFF')}")
+    console.print()
 
-    print("--- Certificate ---")
-    print(_cert_info())
-    print()
+    console.print("--- Certificate ---")
+    console.print(_cert_info())
+    console.print()
 
-    print("--- Config ---")
-    print(_config_summary())
-    print()
+    console.print("--- Config ---")
+    console.print(_config_summary())
+    console.print()
 
-    print("--- Subscriptions ---")
-    print(_sub_info())
-    print()
+    console.print("--- Subscriptions ---")
+    console.print(_sub_info())
+    console.print()
 
-    print("--- CDN ---")
+    console.print("--- CDN ---")
     from vwn.modules.cdn import status as _cdn_status
     cdn = _cdn_status()
     mode = cdn["mode"]
     ip = cdn["ip"] or "-"
     watcher = "ON" if cdn["watcher"] else "OFF"
     found = cdn["found_count"]
-    print(f"  Mode: {mode}  IP: {ip}  Watcher: {watcher}  Cached: {found}")
-    print()
+    console.print(f"  Mode: {mode}  IP: {ip}  Watcher: {watcher}  Cached: {found}")
+    console.print()
 
-    print("--- Security ---")
+    console.print("--- Security ---")
     from vwn.modules.security import bbr_status, fail2ban_status, webjail_status, ipv6_status, ssh_password_auth_status
     bbr = bbr_status()
     f2b = fail2ban_status()
     wj = webjail_status()
     ipv6 = ipv6_status()
     sh = ssh_password_auth_status()
-    print(f"  BBR: {'ON' if bbr['enabled'] else 'OFF'} ({bbr['algo']})")
-    print(f"  Fail2Ban: {'ON' if f2b['active'] else 'OFF'} (jailed: {f2b['jailed']})")
-    print(f"  WebJail: {'ON' if wj['enabled'] else 'OFF'} (banned: {wj['banned']})")
-    print(f"  IPv6: {'OFF (disabled)' if ipv6['disabled'] else 'ON'}")
+    console.print(f"  BBR: {'ON' if bbr['enabled'] else 'OFF'} ({bbr['algo']})")
+    console.print(f"  Fail2Ban: {'ON' if f2b['active'] else 'OFF'} (jailed: {f2b['jailed']})")
+    console.print(f"  WebJail: {'ON' if wj['enabled'] else 'OFF'} (banned: {wj['banned']})")
+    console.print(f"  IPv6: {'OFF (disabled)' if ipv6['disabled'] else 'ON'}")
     if sh['password_auth']:
-        print(f"  SSH password auth: {_fail('ON')}")
+        console.print(f"  SSH password auth: {_fail('ON')}")
     else:
-        print(f"  SSH password auth: {_ok('OFF')}")
+        console.print(f"  SSH password auth: {_ok('OFF')}")
     if sh['root_password_login']:
-        print(f"  SSH root login: {_fail('YES (password allowed)')}")
+        console.print(f"  SSH root login: {_fail('YES (password allowed)')}")
     else:
-        print(f"  SSH root login: {_ok('prohibit-password')}")
-    print()
+        console.print(f"  SSH root login: {_ok('prohibit-password')}")
+    console.print()
 
-    print("--- System ---")
+    console.print("--- System ---")
     try:
         r = subprocess.run(["uptime", "-p"], capture_output=True, text=True, timeout=3)
-        print(f"  Uptime: {r.stdout.strip()}")
+        console.print(f"  Uptime: {r.stdout.strip()}")
     except Exception:
         pass
     try:
         r = subprocess.run(["df", "-h", "/", "--output=pcent"], capture_output=True, text=True, timeout=3)
         disk = r.stdout.strip().splitlines()[-1].strip() if r.returncode == 0 else "?"
-        print(f"  Disk: {disk} used")
+        console.print(f"  Disk: {disk} used")
     except Exception:
         pass
     try:
@@ -275,11 +275,11 @@ def run_full_diag() -> None:
         for l in r.stdout.splitlines():
             if l.startswith("Mem:"):
                 parts = l.split()
-                print(f"  RAM: {parts[2]}MB / {parts[1]}MB used")
+                console.print(f"  RAM: {parts[2]}MB / {parts[1]}MB used")
                 break
     except Exception:
         pass
-    print()
+    console.print()
 
     _diag_network()
     _diag_connectivity()
