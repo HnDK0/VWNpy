@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import string
+import subprocess
 import urllib.request
 import uuid as uuid_mod
 
@@ -104,9 +105,21 @@ def get_country_flag(ip: str) -> str:
         url = f"https://ip-api.com/line/{ip}?fields=countryCode"
         with urllib.request.urlopen(url, timeout=5) as resp:
             code = resp.read().decode().strip()
-        return _country_code_to_flag(code)
+        if len(code) == 2 and code.isalpha():
+            return _country_code_to_flag(code)
     except Exception:
-        return "\U0001f310"
+        pass
+    try:
+        r = subprocess.run(
+            ["mmdblookup", "--file", "/usr/local/share/GeoLite2-Country.mmdb", "--ip", ip],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        m = re.search(r'"iso_code":\s+"([A-Z]{2})"', r.stdout or "")
+        if m:
+            return _country_code_to_flag(m.group(1))
+    except Exception:
+        pass
+    return "\U0001f310"
 
 
 def get_cached_flag() -> str:

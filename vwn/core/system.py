@@ -277,14 +277,21 @@ def _create_xray_user() -> None:
                "-d", config.XRAY_DIR, "xray"], check=False)
 
 
+MMDB_FILE = "/usr/local/share/GeoLite2-Country.mmdb"
+
 def _install_geo_databases() -> None:
-    """Скачать geoip.dat/geosite.dat (нужны для routing geoip:/geosite:)."""
+    """Скачать geoip.dat/geosite.dat + GeoLite2-Country.mmdb."""
     os.makedirs("/usr/local/share/xray", exist_ok=True)
     base = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
     for dat in ("geoip.dat", "geosite.dat"):
         shell.run(["curl", "-fsSL", "--connect-timeout", "15", "--retry", "2",
                    f"{base}/{dat}", "-o", f"/usr/local/share/xray/{dat}"],
                   check=False)
+    if not os.path.isfile(MMDB_FILE):
+        os.makedirs(os.path.dirname(MMDB_FILE), exist_ok=True)
+        shell.run(["curl", "-fsSL", "--connect-timeout", "15", "--retry", "2",
+                   "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
+                   "-o", MMDB_FILE], check=False)
 
 
 def install_xray() -> None:

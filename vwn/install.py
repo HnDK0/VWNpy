@@ -134,7 +134,8 @@ def run_install(argv: "list | None" = None) -> None:
 
     for pkg in ("curl", "jq", "socat", "qrencode", "python3", "unzip",
                 "openssl", "e2fsprogs", "netcat-openbsd",
-                "gnupg2", "lsb-release", "software-properties-common"):
+                "gnupg2", "lsb-release", "software-properties-common",
+                "mmdb-bin"):
         shell.run_task(f"Установка {pkg}", lambda p=pkg: system.install_package(p))
 
     shell.run_task("Установка nginx 1.30+ (из исходников)",
