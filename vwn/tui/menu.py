@@ -37,22 +37,17 @@ def full_remove() -> None:
 
 
 def _rebuild_configs() -> None:
-    """Пересобрать все конфиги (новые ключи Reality)."""
-    from vwn.core import config as vc
-    domain = vc.vwn_conf_get("DOMAIN")
-    stub = vc.vwn_conf_get("STUB_URL")
-    reality_dest = vc.vwn_conf_get("REALITY_DEST")
-    if not all([domain, stub, reality_dest]):
-        console.print("[red]Конфиг неполный — сначала выполните vwn install[/]")
+    """Пересобрать все конфиги."""
+    from vwn.modules.xray import rebuild_configs
+    try:
+        rebuild_configs()
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/]")
         return
-    from vwn.modules.xray import provision_configs
-    provision_configs(domain, stub, reality_dest)
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
     run_cmd("systemctl daemon-reload")
     for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
         run_cmd(f"systemctl restart {svc}")
-    console.print("[bright_green]Конфиги пересобраны (новые ключи Reality)[/]")
+    console.print("[bright_green]Конфиги пересобраны из текущих параметров[/]")
 
 
 def _update_vwn() -> None:

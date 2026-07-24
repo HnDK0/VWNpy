@@ -467,6 +467,56 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
     }
 
 
+def rebuild_configs() -> None:
+    """Пересобрать все конфиги Xray из сохранённых параметров vwn.conf.
+
+    Перезаписывает JSON-конфиги текущими шаблонами (подхватывая новые
+    поля из обновлений), затем применяет пользователей из users.conf,
+    пересоздаёт nginx loopback и файлы подписок.
+    """
+    domain = config.vwn_conf_get("DOMAIN")
+    stub = config.vwn_conf_get("STUB_URL")
+    reality_dest = config.vwn_conf_get("REALITY_DEST")
+    uuid_ = config.vwn_conf_get("UUID")
+    ws_path = config.vwn_conf_get("WS_PATH")
+    xhttp_path = config.vwn_conf_get("XHTTP_PATH")
+    short_id = config.vwn_conf_get("SHORT_ID")
+    reality_port = int(config.vwn_conf_get("REALITY_PORT") or config.REALITY_PUBLIC_PORT)
+    xhttp_mode = config.vwn_conf_get("XHTTP_MODE") or "auto"
+    if not all([domain, stub, reality_dest, uuid_, ws_path, xhttp_path, short_id]):
+        raise RuntimeError("Конфиг неполный — сначала выполните vwn install")
+
+    r_cfg = _read_json(os.path.join(config.XRAY_DIR, "xray-reality.json"))
+    if r_cfg is None:
+        raise RuntimeError("xray-reality.json не найден — невозможно пересобрать")
+    private_key = (r_cfg.get("inbounds", [{}])[0]
+                   .get("streamSettings", {}).get("realitySettings", {})
+                   .get("privateKey", ""))
+    if not private_key:
+        raise RuntimeError("Reality private_key не найден в текущем конфиге")
+
+    server_name = reality_dest.split(":", 1)[0]
+    write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
+                         uuid_, reality_dest, server_name,
+                         private_key, short_id, port=reality_port)
+
+    reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
+    if reality_mode != "tcp":
+        set_reality_mode(reality_mode)
+
+    write_ws_config(os.path.join(config.XRAY_DIR, "config.json"),
+                    uuid_, config.XRAY_WS_PORT, ws_path, domain)
+    write_xhttp_config(os.path.join(config.XRAY_DIR, "xhttp.json"),
+                       uuid_, config.XRAY_XHTTP_PORT, xhttp_path, domain,
+                       mode=xhttp_mode)
+
+    from vwn.modules.users import apply_users_to_configs
+    apply_users_to_configs()
+    _re_render_nginx()
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+
+
 # ── WS / XHTTP management ──────────────────────────────────────────
 
 def _re_render_nginx(**overrides) -> None:
