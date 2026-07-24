@@ -216,3 +216,72 @@ def test_remove_domain(monkeypatch, tmp_path):
     tor.add_domain("y.com")
     tor.remove_domain(0)
     assert tor.list_domains() == ["y.com"]
+
+
+def test_add_domain_blocked_in_global(monkeypatch, tmp_path):
+    """Global guard — tor.add_domain() возвращает False при Global rule."""
+    from vwn.modules._outbound import _paths
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(tor, "DOMAINS_FILE", str(tmp_path / "domains.txt"))
+
+    cfg = {"routing": {"rules": [
+        {"type": "field", "port": "0-65535", "outboundTag": "tor"},
+    ]}, "outbounds": [{"tag": "tor", "protocol": "socks"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        import json
+        json.dump(cfg, f)
+
+    ok = tor.add_domain("example.com")
+    assert ok is False
+    assert not os.path.isfile(str(tmp_path / "domains.txt"))
+
+
+def test_apply_domains_skips_global(monkeypatch, tmp_path):
+    """_apply_domains() не патчит规则 если есть Global rule."""
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(tor, "DOMAINS_FILE", str(tmp_path / "domains.txt"))
+    (tmp_path / "domains.txt").write_text("example.com\n", encoding="utf-8")
+
+    import json
+    cfg = {"routing": {"rules": [
+        {"type": "field", "port": "0-65535", "outboundTag": "tor"},
+    ]}, "outbounds": [{"tag": "tor", "protocol": "socks"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    tor._apply_domains()
+
+    with open(p) as f:
+        result = json.load(f)
+    rules = result["routing"]["rules"]
+    assert rules[0].get("port") == "0-65535"
+    assert rules[0].get("domain") is None
+
+
+def test_reapply_routing_global(monkeypatch, tmp_path):
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(tor, "DOMAINS_FILE", str(tmp_path / "domains.txt"))
+    vc.vwn_conf_set("TOR_TUNNEL_MODE", "Global")
+
+    import json
+    cfg = {"routing": {"rules": []}, "outbounds": [
+        {"tag": "tor", "protocol": "socks"},
+        {"tag": "free"},
+    ]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    tor.reapply_routing()
+
+    with open(p) as f:
+        result = json.load(f)
+    port_rules = [r for r in result["routing"]["rules"]
+                  if r.get("outboundTag") == "tor" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1

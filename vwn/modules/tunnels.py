@@ -9,6 +9,26 @@ import json
 from vwn.core import shell
 from vwn.core.color import C
 
+_TUNNEL_TAGS = {"warp", "psiphon", "tor", "relay"}
+
+
+def _is_any_tunnel_tag(tag: str) -> bool:
+    return tag in _TUNNEL_TAGS or tag.startswith("warp-")
+
+
+def insert_before_catchall(rules: list, rule: dict) -> None:
+    """Вставить routing rule перед catch-all (port 0-65535 → не-tunnel outbound).
+
+    Xray: first-match. Catch-all должен быть последним.
+    DNS, ads, private, bittorrent — ДО туннеля.
+    Туннельный rule — перед catch-all, после всего остального.
+    """
+    for i, r in enumerate(rules):
+        if r.get("port") == "0-65535" and not _is_any_tunnel_tag(r.get("outboundTag", "")):
+            rules.insert(i, rule)
+            return
+    rules.append(rule)
+
 
 def _match_tunnel_tag(outbound_tag: str, tag: str) -> bool:
     if tag == "warp":

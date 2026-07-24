@@ -231,16 +231,26 @@ def _apply_domains() -> None:
     if not domains:
         _remove_from_configs()
         return
+    from vwn.modules._outbound import _paths
+    from vwn.modules._domains import _is_global
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = json.load(f)
+        if _is_global(cfg.get("routing", {}).get("rules", []), TAG):
+            return
     add_outbound(TAG, "socks", PORT)
     domains_json = [f"domain:{d}" for d in domains]
-    from vwn.modules._outbound import _paths
     for path in _paths():
         if not os.path.isfile(path):
             continue
         with open(path) as f:
             cfg = json.load(f)
         for r in cfg.setdefault("routing", {}).setdefault("rules", []):
-            if r.get("outboundTag") == TAG:
+            if (r.get("outboundTag") == TAG
+                    and not r.get("inboundTag")
+                    and r.get("port") != "0-65535"):
                 r["domain"] = domains_json
                 r.pop("port", None)
         with open(path, "w") as f:
@@ -253,7 +263,17 @@ def _remove_from_configs() -> None:
     remove_outbound(TAG)
 
 
-def add_domain(domain: str) -> None:
+def add_domain(domain: str) -> bool:
+    from vwn.modules._outbound import _paths
+    from vwn.modules._domains import _is_global
+    import json as _j
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = _j.load(f)
+        if _is_global(cfg.get("routing", {}).get("rules", []), TAG):
+            return False
     os.makedirs(os.path.dirname(DOMAINS_FILE), exist_ok=True)
     with open(DOMAINS_FILE, "a") as f:
         f.write(domain + "\n")
@@ -261,6 +281,7 @@ def add_domain(domain: str) -> None:
     with open(DOMAINS_FILE, "w") as f:
         f.write("\n".join(lines) + "\n")
     _apply_domains()
+    return True
 
 
 def remove_domain(index: int) -> None:
@@ -278,6 +299,46 @@ def list_domains() -> list[str]:
     if not os.path.isfile(DOMAINS_FILE):
         return []
     return [l.strip() for l in open(DOMAINS_FILE) if l.strip()]
+
+
+def reapply_routing() -> None:
+    """Повторно применить routing rule для Tor (после rebuild_configs)."""
+    import json as _j
+    from vwn.core import config as _cfg
+    mode = _cfg.vwn_conf_get("TOR_TUNNEL_MODE") or ""
+    if not mode:
+        return
+    from vwn.modules._outbound import _paths
+    from vwn.modules.tunnels import insert_before_catchall
+    has_outbound = False
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = _j.load(f)
+        if any(o.get("tag") == TAG for o in cfg.get("outbounds", [])):
+            has_outbound = True
+            break
+    if not has_outbound:
+        return
+    domains = list_domains() if mode == "Split" else []
+    if mode == "Global":
+        rule = {"type": "field", "port": "0-65535", "outboundTag": TAG}
+    else:
+        domains_json = [f"domain:{d}" for d in domains]
+        rule = {"type": "field", "domain": domains_json, "outboundTag": TAG}
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = _j.load(f)
+        rules = cfg.setdefault("routing", {}).setdefault("rules", [])
+        rules = [r for r in rules
+                 if not (r.get("outboundTag") == TAG and "inboundTag" not in r)]
+        insert_before_catchall(rules, rule)
+        cfg["routing"]["rules"] = rules
+        with open(path, "w") as f:
+            _j.dump(cfg, f, indent=2, ensure_ascii=False)
 
 
 def _write_config(country: str) -> None:

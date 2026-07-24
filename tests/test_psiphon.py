@@ -167,3 +167,106 @@ def test_remove(monkeypatch, tmp_path):
     flat = [" ".join(c) for c in calls]
     assert any("stop" in c for c in flat)
     assert any("daemon-reload" in c for c in flat)
+
+
+def test_add_domain(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+
+    cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "psiphon"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    ok = psiphon.add_domain("example.com")
+    assert ok is True
+    assert psiphon.list_domains() == ["example.com"]
+
+
+def test_remove_domain(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+
+    cfg = {"routing": {"rules": [
+        {"type": "field", "domain": ["domain:example.com"], "outboundTag": "psiphon"},
+    ]}, "outbounds": [{"tag": "psiphon"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+    (tmp_path / "psiphon_domains.txt").write_text("example.com\n", encoding="utf-8")
+
+    psiphon.remove_domain(0)
+    assert psiphon.list_domains() == []
+
+
+def test_reapply_routing_global(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+    vc.vwn_conf_set("PSIPHON_TUNNEL_MODE", "Global")
+
+    cfg = {"routing": {"rules": []}, "outbounds": [
+        {"tag": "psiphon", "protocol": "socks"},
+        {"tag": "free"},
+    ]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    psiphon.reapply_routing()
+
+    with open(p) as f:
+        result = json.load(f)
+    port_rules = [r for r in result["routing"]["rules"]
+                  if r.get("outboundTag") == "psiphon" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1
+
+
+def test_reapply_routing_split(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+    vc.vwn_conf_set("PSIPHON_TUNNEL_MODE", "Split")
+
+    cfg = {"routing": {"rules": []}, "outbounds": [
+        {"tag": "psiphon", "protocol": "socks"},
+        {"tag": "free"},
+    ]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+    (tmp_path / "psiphon_domains.txt").write_text("google.com\n", encoding="utf-8")
+
+    psiphon.reapply_routing()
+
+    with open(p) as f:
+        result = json.load(f)
+    split_rules = [r for r in result["routing"]["rules"]
+                   if r.get("outboundTag") == "psiphon" and r.get("domain")]
+    assert len(split_rules) == 1
+    assert "domain:google.com" in split_rules[0]["domain"]
+
+
+def test_reapply_routing_no_mode(monkeypatch, tmp_path):
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    if os.path.isfile(str(tmp_path / "vwn.conf")):
+        os.remove(str(tmp_path / "vwn.conf"))
+
+    cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "psiphon"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    psiphon.reapply_routing()
+
+    with open(p) as f:
+        result = json.load(f)
+    assert len(result["routing"]["rules"]) == 0

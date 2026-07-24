@@ -4,7 +4,7 @@ import os
 import pytest
 
 from vwn.core import config
-from vwn.modules import xray
+from vwn.modules import xray, relay
 
 
 @pytest.fixture
@@ -125,3 +125,57 @@ def test_reapply_warp_restores_outbound(paths):
     reapply_warp()
     rc2 = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
     assert "warp-svc" in [o["tag"] for o in rc2["outbounds"]]
+
+
+def test_rebuild_preserves_psiphon_routing(paths):
+    """rebuild_configs() восстанавливает psiphon routing после перезаписи."""
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("PSIPHON_TUNNEL_MODE", "Global")
+
+    xray.rebuild_configs()
+
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    port_rules = [r for r in rc["routing"]["rules"]
+                  if r.get("outboundTag") == "psiphon" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1, "psiphon Global rule must survive rebuild"
+
+
+def test_rebuild_preserves_tor_routing(paths):
+    """rebuild_configs() восстанавливает tor routing после перезаписи."""
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("TOR_TUNNEL_MODE", "Global")
+
+    xray.rebuild_configs()
+
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    port_rules = [r for r in rc["routing"]["rules"]
+                  if r.get("outboundTag") == "tor" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1, "tor Global rule must survive rebuild"
+
+
+def test_rebuild_preserves_relay_routing(paths, monkeypatch):
+    """rebuild_configs() восстанавливает relay outbound + routing после перезаписи."""
+    monkeypatch.setattr(relay, "CONFIG", str(paths / "xray" / "relay.json"))
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("RELAY_TUNNEL_MODE", "Global")
+    relay_cfg = paths / "xray" / "relay.json"
+    with open(relay_cfg, "w") as f:
+        json.dump({"protocol": "socks", "host": "1.2.3.4", "port": 1080}, f)
+
+    xray.rebuild_configs()
+
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    tags = [o["tag"] for o in rc["outbounds"]]
+    assert "relay" in tags, "relay outbound must survive rebuild"
+    port_rules = [r for r in rc["routing"]["rules"]
+                  if r.get("outboundTag") == "relay" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1, "relay Global rule must survive rebuild"

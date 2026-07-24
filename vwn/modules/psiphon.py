@@ -162,9 +162,9 @@ def remove() -> None:
         shell.run(["systemctl", "restart", svc], check=False)
 
 
-def add_domain(domain: str) -> None:
+def add_domain(domain: str) -> bool:
     from vwn.modules._domains import add_domain as _ad
-    _ad(TAG, domain)
+    return _ad(TAG, domain)
 
 
 def remove_domain(index: int) -> None:
@@ -175,6 +175,48 @@ def remove_domain(index: int) -> None:
 def list_domains() -> list[str]:
     from vwn.modules._domains import list_domains as _ld
     return _ld(TAG)
+
+
+def reapply_routing() -> None:
+    """Повторно применить routing rule для Psiphon (после rebuild_configs)."""
+    from vwn.core import config as _cfg
+    mode = _cfg.vwn_conf_get("PSIPHON_TUNNEL_MODE") or ""
+    if not mode:
+        return
+    from vwn.modules._outbound import _paths
+    from vwn.modules.tunnels import insert_before_catchall
+    from vwn.modules._domains import list_domains as _ld
+    has_outbound = False
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = json.load(f)
+        if any(o.get("tag") == TAG for o in cfg.get("outbounds", [])):
+            has_outbound = True
+            break
+    if not has_outbound:
+        return
+    domains = _ld(TAG) if mode == "Split" else []
+    if mode == "Split" and not domains:
+        domains = ["whoer.net"]
+    if mode == "Global":
+        rule = {"type": "field", "port": "0-65535", "outboundTag": TAG}
+    else:
+        domains_json = [f"domain:{d}" for d in domains]
+        rule = {"type": "field", "domain": domains_json, "outboundTag": TAG}
+    for path in _paths():
+        if not os.path.isfile(path):
+            continue
+        with open(path) as f:
+            cfg = json.load(f)
+        rules = cfg.setdefault("routing", {}).setdefault("rules", [])
+        rules = [r for r in rules
+                 if not (r.get("outboundTag") == TAG and "inboundTag" not in r)]
+        insert_before_catchall(rules, rule)
+        cfg["routing"]["rules"] = rules
+        with open(path, "w") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 
 def status() -> dict:

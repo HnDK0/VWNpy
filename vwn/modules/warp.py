@@ -97,20 +97,24 @@ def _remove_outbound(method: str = "") -> None:
 
 
 def _add_routing_rule_if_missing(tag: str, mode: str = "Global") -> None:
+    from vwn.modules.tunnels import insert_before_catchall
     for path in _xray_config_paths():
         with open(path) as f:
             cfg = json.load(f)
         rules = cfg.setdefault("routing", {}).setdefault("rules", [])
-        rules[:] = [r for r in rules if not _is_warp_routing(r)]
+        # Удаляем только warp routing rules БЕЗ inboundTag
+        # (socks-warp rules с inboundTag не трогаем)
+        rules[:] = [r for r in rules
+                    if not (_is_warp_routing(r) and not r.get("inboundTag"))]
         if mode == "Global":
-            rules.insert(0, {"type": "field", "port": "0-65535", "outboundTag": tag})
+            insert_before_catchall(rules, {"type": "field", "port": "0-65535", "outboundTag": tag})
         elif mode == "Split":
             from vwn.modules._domains import list_domains
             domains = list_domains(tag)
             if not domains:
                 domains = ["whoer.net"]
             domains_json = [f"domain:{d}" for d in domains]
-            rules.insert(0, {"type": "field", "domain": domains_json, "outboundTag": tag})
+            insert_before_catchall(rules, {"type": "field", "domain": domains_json, "outboundTag": tag})
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -688,10 +692,10 @@ def status() -> dict:
             "endpoint": config.vwn_conf_get("WARP_ENDPOINT") or "",
             "awg_mode": config.vwn_conf_get("AWG_MODE") or ""}
 
-def add_domain(domain: str) -> None:
+def add_domain(domain: str) -> bool:
     from vwn.modules._domains import add_domain as _ad
     method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
-    _ad(_tag_for_method(method), domain)
+    return _ad(_tag_for_method(method), domain)
 
 
 def remove_domain(index: int) -> None:

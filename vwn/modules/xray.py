@@ -459,6 +459,12 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
 
     from vwn.modules.warp import reapply_warp
     reapply_warp()
+    from vwn.modules.psiphon import reapply_routing as reapply_psiphon
+    reapply_psiphon()
+    from vwn.modules.tor import reapply_routing as reapply_tor
+    reapply_tor()
+    from vwn.modules.relay import reapply_routing as reapply_relay
+    reapply_relay()
 
     return {
         "uuid": uuid_, "ws_path": ws_path, "xhttp_path": xhttp_path,
@@ -515,6 +521,15 @@ def rebuild_configs() -> None:
     _re_render_nginx()
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
+
+    from vwn.modules.warp import reapply_warp
+    reapply_warp()
+    from vwn.modules.psiphon import reapply_routing as reapply_psiphon
+    reapply_psiphon()
+    from vwn.modules.tor import reapply_routing as reapply_tor
+    reapply_tor()
+    from vwn.modules.relay import reapply_routing as reapply_relay
+    reapply_relay()
 
 
 # ── WS / XHTTP management ──────────────────────────────────────────

@@ -141,8 +141,11 @@ def add_domain_flow(tag: str) -> None:
     d = input("> ").strip()
     if d:
         from vwn.modules._domains import add_domain
-        add_domain(tag, d)
-        console.print(f"  [bright_green]Добавлен: {d}[/]")
+        ok = add_domain(tag, d)
+        if ok:
+            console.print(f"  [bright_green]Добавлен: {d}[/]")
+        else:
+            console.print("  [yellow]Туннель в режиме Global — домены не применяются. Переключитесь на Split.[/]")
 
 
 def remove_domain_flow(tag: str) -> None:

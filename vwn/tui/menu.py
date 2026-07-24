@@ -119,8 +119,11 @@ def run_menu() -> None:
                 console.print("  Домен для добавления:")
                 d = input("> ").strip()
                 if d:
-                    _ad(d)
-                    console.print(f"  [bright_green]Добавлен: {d}[/]")
+                    ok = _ad(d)
+                    if ok:
+                        console.print(f"  [bright_green]Добавлен: {d}[/]")
+                    else:
+                        console.print("  [yellow]Туннель в режиме Global — домены не применяются. Переключитесь на Split.[/]")
 
             def _warp_remove_domain() -> None:
                 from vwn.modules.warp import list_domains as _ld, remove_domain as _rd

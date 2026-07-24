@@ -6,16 +6,8 @@ import os
 
 from vwn.core import config, shell
 from vwn.core.color import console
+from vwn.modules.tunnels import _is_any_tunnel_tag, insert_before_catchall
 from vwn.tui.helpers import pick_country, restart_xray_services, run_cmd, run_task, wait_key
-
-
-_TUNNEL_TAGS = {"warp", "psiphon", "tor", "relay"}
-
-
-def _is_any_tunnel_tag(tag: str) -> bool:
-    if tag in _TUNNEL_TAGS:
-        return True
-    return tag.startswith("warp-")
 
 
 def _switch_tunnel_mode(tag: str, mode: str) -> str:
@@ -40,23 +32,23 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
             rules = [r for r in rules
                      if not (_is_any_tunnel_tag(r.get("outboundTag", ""))
                              and r.get("port") == "0-65535")]
-            rules.insert(0, {"type": "field", "port": "0-65535", "outboundTag": actual_tag})
+            insert_before_catchall(rules, {"type": "field", "port": "0-65535", "outboundTag": actual_tag})
         elif mode == "Split":
             from vwn.modules._domains import list_domains
             domains = list_domains(actual_tag)
             if not domains:
                 domains = ["whoer.net"]
             domains_json = [f"domain:{d}" for d in domains]
-            rules.insert(0, {"type": "field", "domain": domains_json, "outboundTag": actual_tag})
+            insert_before_catchall(rules, {"type": "field", "domain": domains_json, "outboundTag": actual_tag})
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    if tag == "warp" and mode != "OFF":
-        from vwn.core import config as _cfg
-        _cfg.vwn_conf_set("WARP_TUNNEL_MODE", mode)
-    elif tag == "warp" and mode == "OFF":
-        from vwn.core import config as _cfg
-        _cfg.vwn_conf_del("WARP_TUNNEL_MODE")
+    from vwn.core import config as _cfg
+    conf_key = f"{tag.upper()}_TUNNEL_MODE"
+    if mode != "OFF":
+        _cfg.vwn_conf_set(conf_key, mode)
+    else:
+        _cfg.vwn_conf_del(conf_key)
     return actual_tag
 
 

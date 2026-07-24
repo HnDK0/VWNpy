@@ -102,3 +102,94 @@ def test_remove(monkeypatch, tmp_path):
     relay.remove()
 
     assert not os.path.isfile(relay.CONFIG)
+
+
+def test_add_domain(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+
+    cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "relay"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+
+    ok = relay.add_domain("example.com")
+    assert ok is True
+    assert relay.list_domains() == ["example.com"]
+
+
+def test_remove_domain(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+
+    cfg = {"routing": {"rules": [
+        {"type": "field", "domain": ["domain:example.com"], "outboundTag": "relay"},
+    ]}, "outbounds": [{"tag": "relay"}]}
+    p = tmp_path / "config.json"
+    with open(p, "w") as f:
+        json.dump(cfg, f)
+    (tmp_path / "relay_domains.txt").write_text("example.com\n", encoding="utf-8")
+
+    relay.remove_domain(0)
+    assert relay.list_domains() == []
+
+
+def test_reapply_routing_global(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(relay, "CONFIG", str(tmp_path / "relay.json"))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+    vc.vwn_conf_set("RELAY_TUNNEL_MODE", "Global")
+
+    with open(tmp_path / "relay.json", "w") as f:
+        json.dump({"protocol": "socks", "host": "1.2.3.4", "port": 1080}, f)
+
+    cfg = {"routing": {"rules": []}, "outbounds": [
+        {"tag": "free"},
+        {"tag": "block", "protocol": "blackhole"},
+    ]}
+    for name in ("config.json", "xhttp.json", "xray-reality.json"):
+        with open(tmp_path / name, "w") as f:
+            json.dump(cfg, f)
+
+    relay.reapply_routing()
+
+    with open(tmp_path / "config.json") as f:
+        result = json.load(f)
+    tags = [o["tag"] for o in result["outbounds"]]
+    assert "relay" in tags
+    port_rules = [r for r in result["routing"]["rules"]
+                  if r.get("outboundTag") == "relay" and r.get("port") == "0-65535"]
+    assert len(port_rules) == 1
+
+
+def test_reapply_routing_split(monkeypatch, tmp_path):
+    from vwn.modules import _domains
+    from vwn.core import config as vc
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(relay, "CONFIG", str(tmp_path / "relay.json"))
+    monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
+    vc.vwn_conf_set("RELAY_TUNNEL_MODE", "Split")
+
+    with open(tmp_path / "relay.json", "w") as f:
+        json.dump({"protocol": "socks", "host": "1.2.3.4", "port": 1080}, f)
+    (tmp_path / "relay_domains.txt").write_text("google.com\n", encoding="utf-8")
+
+    cfg = {"routing": {"rules": []}, "outbounds": [
+        {"tag": "free"},
+        {"tag": "block", "protocol": "blackhole"},
+    ]}
+    with open(tmp_path / "config.json", "w") as f:
+        json.dump(cfg, f)
+
+    relay.reapply_routing()
+
+    with open(tmp_path / "config.json") as f:
+        result = json.load(f)
+    split_rules = [r for r in result["routing"]["rules"]
+                   if r.get("outboundTag") == "relay" and r.get("domain")]
+    assert len(split_rules) == 1
+    assert "domain:google.com" in split_rules[0]["domain"]
