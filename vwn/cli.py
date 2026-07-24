@@ -115,6 +115,26 @@ def sub_rebuild():
 
 @cli.command()
 def update():
+    """Обновить VWNpy с git (git pull + pip install)."""
+    import subprocess, sys
+    repo_dir = "/opt/vwn"
+    click.echo("Обновление VWNpy...")
+    r = subprocess.run(["git", "-C", repo_dir, "pull", "--ff-only"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        click.echo(f"git pull ошибка: {r.stderr.strip()}", err=True)
+        return
+    click.echo(r.stdout.strip() or "Уже актуально.")
+    r2 = subprocess.run([sys.executable, "-m", "pip", "install", "-e", repo_dir],
+                        capture_output=True, text=True)
+    if r2.returncode == 0:
+        click.echo("pip install OK.")
+    else:
+        click.echo(f"pip install ошибка: {r2.stderr.strip()}", err=True)
+
+
+@cli.command(name="update-xray")
+def update_xray():
     """Обновить Xray-core до последней версии."""
     from vwn.core.system import install_xray
     click.echo("Обновление Xray-core...")

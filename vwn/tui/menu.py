@@ -1178,6 +1178,15 @@ def _update_xray() -> None:
     _run_task("Обновление Xray-core", install_xray)
 
 
+def _update_vwn() -> None:
+    import subprocess, sys
+    repo_dir = "/opt/vwn"
+    _run_task("git pull", lambda: subprocess.run(
+        ["git", "-C", repo_dir, "pull", "--ff-only"], check=True))
+    _run_task("pip install", lambda: subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-e", repo_dir], check=True))
+
+
 def run_menu() -> None:
     while True:
         console.clear()
@@ -1198,6 +1207,7 @@ def run_menu() -> None:
             "CDN",
             "Бэкап / Восстановление",
             "Пересобрать все конфиги",
+            "Обновить VWNpy",
             "Обновить Xray-core",
             "Перезапустить все сервисы",
             "Полное удаление",
@@ -1402,12 +1412,14 @@ def run_menu() -> None:
         elif choice == 14:
             _rebuild_configs()
         elif choice == 15:
-            _update_xray()
+            _update_vwn()
         elif choice == 16:
+            _update_xray()
+        elif choice == 17:
             for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
                 _run_cmd(f"systemctl restart {svc}")
             wait_key()
-        elif choice == 17:
-            full_remove()
         elif choice == 18:
+            full_remove()
+        elif choice == 19:
             break
