@@ -1245,6 +1245,8 @@ def run_menu() -> None:
                 console.print(f"  Прямой IP: {r['direct'] or 'N/A'}")
                 console.print(f"  WARP IP:   {r['warp'] or 'N/A'}")
                 console.print(f"  Выход geo: {r['country'] or 'N/A'}")
+                if not r["warp"] and r.get("error"):
+                    console.print(f"  [red]Ошибка: {r['error']}[/]")
 
             def _warp_add_domain():
                 console.print("  Домен для добавления:")
@@ -1282,12 +1284,23 @@ def run_menu() -> None:
                     _run_task("Удаление текущего WARP", _rm)
                 _run_task("Установка WARP", lambda: _ins(method))
 
-            manage_tunnel("WARP", "warp-svc.service", "warp", has_install=True,
+            def _warp_logs():
+                from vwn.core import config as _cfg
+                method = _cfg.vwn_conf_get("WARP_METHOD") or ""
+                if method == "amnezia":
+                    _run_cmd("journalctl -u amnezia-warp -n 50 --no-pager")
+                elif method == "warp-svc":
+                    _run_cmd("journalctl -u warp-svc -n 50 --no-pager")
+                else:
+                    _run_cmd("journalctl -u xray-reality -n 50 --no-pager")
+
+            manage_tunnel("WARP", "", "warp", has_install=True,
                           extra={
                               "Сменить метод": _warp_change_method,
                               "Добавить домен": _warp_add_domain,
                               "Удалить домен": _warp_del_domain,
                               "Проверить IP через WARP": _warp_check_ip,
+                              "Показать логи": _warp_logs,
                           })
         elif choice == 5:
             def _ps_add_domain():

@@ -184,6 +184,29 @@ def _pick_endpoint(prefer_port: int = 2408) -> str:
     return f"{sorted_ips[0]}:{prefer_port}"
 
 
+def _apply_socks_inbound(path: str, port: int = 10808) -> None:
+    """Добавить SOCKS inbound + routing rule в конфиг Xray."""
+    WARP_SOCKS_PORTS = {10808, 10809}
+    with open(path) as f:
+        cfg = json.load(f)
+    socks_inbound = {
+        "listen": "127.0.0.1", "port": port,
+        "protocol": "socks", "settings": {"udp": True},
+        "tag": SOCKS_TAG,
+    }
+    cfg.setdefault("inbounds", [])
+    cfg["inbounds"] = [i for i in cfg["inbounds"]
+                       if i.get("tag") != SOCKS_TAG
+                       or i.get("port") not in WARP_SOCKS_PORTS]
+    cfg["inbounds"].append(socks_inbound)
+    rules = cfg.setdefault("routing", {}).setdefault("rules", [])
+    rules = [r for r in rules if r.get("inboundTag") != [SOCKS_TAG]]
+    rules.insert(0, {"type": "field", "inboundTag": [SOCKS_TAG], "outboundTag": WARP_TAG})
+    cfg["routing"]["rules"] = rules
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
 def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
     outbound = {
         "tag": WARP_TAG, "protocol": "wireguard",
@@ -194,26 +217,15 @@ def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
             "mtu": 1280,
         },
     }
-    socks_inbound = {
-        "listen": "127.0.0.1", "port": 10808,
-        "protocol": "socks", "settings": {"udp": True},
-        "tag": SOCKS_TAG,
-    }
-    socks_rule = {"type": "field", "inboundTag": [SOCKS_TAG], "outboundTag": WARP_TAG}
     for path in _xray_config_paths():
         with open(path) as f:
             cfg = json.load(f)
         cfg.setdefault("outbounds", [])
         cfg["outbounds"] = [o for o in cfg["outbounds"] if o.get("tag") != WARP_TAG]
         cfg["outbounds"].append(outbound)
-        cfg.setdefault("inbounds", [])
-        cfg["inbounds"] = [i for i in cfg["inbounds"] if i.get("tag") != SOCKS_TAG]
-        cfg["inbounds"].append(socks_inbound)
-        rules = cfg.setdefault("routing", {}).setdefault("rules", [])
-        if not any(r.get("inboundTag") == [SOCKS_TAG] for r in rules):
-            rules.insert(0, socks_rule)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+        _apply_socks_inbound(path, 10808)
 
 
 def install_native() -> None:
@@ -414,6 +426,7 @@ def _apply_amnezia_outbound() -> None:
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+        _apply_socks_inbound(path, 10809)
 
 
 def _download_amneziawg_go() -> None:
@@ -618,7 +631,7 @@ def list_domains() -> list[str]:
 
 def check_ip() -> dict:
     import subprocess as _sp
-    result: dict[str, str] = {"direct": "", "warp": "", "country": ""}
+    result: dict[str, str] = {"direct": "", "warp": "", "country": "", "error": ""}
     r = _sp.run(["curl", "-sS", "--max-time", "15", "https://api.ipify.org"],
                 capture_output=True, text=True, timeout=20)
     result["direct"] = r.stdout.strip() if r.returncode == 0 else ""
@@ -635,12 +648,15 @@ def check_ip() -> dict:
                     capture_output=True, text=True, timeout=20)
     elif method == "amnezia":
         r = _sp.run(["curl", "-sS", "--max-time", "15",
-                     "--interface", "warp0",
+                     "--socks5-hostname", "127.0.0.1:10809",
                      "https://api.ipify.org"],
                     capture_output=True, text=True, timeout=20)
     else:
         r = _sp.run(["false"], capture_output=True, timeout=5)
     result["warp"] = r.stdout.strip() if r.returncode == 0 else ""
+    if r.returncode != 0 and not result["warp"]:
+        err = (r.stderr or "").strip()
+        result["error"] = err[:200] if err else f"exit code {r.returncode}"
     if result["warp"]:
         r = _sp.run(["curl", "-sS", "--max-time", "10",
                      f"https://ip-api.com/csv/{result['warp']}?fields=countryCode"],
