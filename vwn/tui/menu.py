@@ -1226,7 +1226,56 @@ def run_menu() -> None:
         elif choice == 3:
             manage_ws_xhttp()
         elif choice == 4:
-            manage_tunnel("WARP", "warp-svc.service", "warp", has_install=True)
+            def _warp_check_ip():
+                from vwn.modules.warp import check_ip as _ci
+                r = _ci()
+                console.print(f"  Прямой IP: {r['direct'] or 'N/A'}")
+                console.print(f"  WARP IP:   {r['warp'] or 'N/A'}")
+                console.print(f"  Выход geo: {r['country'] or 'N/A'}")
+
+            def _warp_add_domain():
+                console.print("  Домен для добавления:")
+                d = input("> ").strip()
+                if d:
+                    from vwn.modules.warp import add_domain as _ad
+                    _ad(d)
+                    console.print(f"  [bright_green]Добавлен: {d}[/]")
+
+            def _warp_del_domain():
+                from vwn.modules.warp import list_domains as _ld, remove_domain as _rd
+                doms = _ld()
+                if not doms:
+                    console.print("  [yellow]Нет доменов[/]"); return
+                for i, d in enumerate(doms, 1):
+                    console.print(f"  {i}. {d}")
+                n = input("> ").strip()
+                if n.isdigit() and 1 <= int(n) <= len(doms):
+                    _rd(int(n) - 1)
+                    console.print("  [bright_green]Удалён[/]")
+
+            def _warp_change_method():
+                from vwn.modules.warp import status as _st, remove as _rm, install as _ins
+                cur = _st()
+                console.print(f"  Текущий метод: {cur['method'] or 'не установлен'}")
+                console.print("  Новый метод:")
+                console.print("    1. native (wgcf→WireGuard, ~0 MB)")
+                console.print("    2. amnezia (AmneziaWG, ~20 MB)")
+                console.print("    3. warp-svc (legacy, ~200 MB)")
+                m = input("> ").strip()
+                method = {"1": "native", "2": "amnezia", "3": "warp-svc"}.get(m)
+                if not method:
+                    console.print("  [red]Неверный выбор[/]"); return
+                if cur["method"]:
+                    _run_task("Удаление текущего WARP", _rm)
+                _run_task("Установка WARP", lambda: _ins(method))
+
+            manage_tunnel("WARP", "warp-svc.service", "warp", has_install=True,
+                          extra={
+                              "Сменить метод": _warp_change_method,
+                              "Добавить домен": _warp_add_domain,
+                              "Удалить домен": _warp_del_domain,
+                              "Проверить IP через WARP": _warp_check_ip,
+                          })
         elif choice == 5:
             def _ps_add_domain():
                 console.print("  Домен для добавления:")
