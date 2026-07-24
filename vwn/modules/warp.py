@@ -125,7 +125,7 @@ def _install_wgcf() -> None:
     wgcf_arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(arch)
     if not wgcf_arch:
         raise RuntimeError(f"Unsupported arch: {arch}")
-    r = shell.run(["curl", "-fsSL",
+    r = shell.run(["curl", "-fL",
         "https://api.github.com/repos/ViRb3/wgcf/releases/latest"],
         capture=True, timeout=15)
     tag = re.search(r'"tag_name"\s*:\s*"([^"]+)"', r.stdout or "")
@@ -135,7 +135,7 @@ def _install_wgcf() -> None:
     version = latest_tag.lstrip("v")
     url = (f"https://github.com/ViRb3/wgcf/releases/download/"
            f"{latest_tag}/wgcf_{version}_linux_{wgcf_arch}")
-    shell.run(["curl", "-fsSL", "-o", WGCF_BIN, url], timeout=60)
+    shell.run(["curl", "-fL", "-o", WGCF_BIN, url], timeout=60)
     os.chmod(WGCF_BIN, 0o755)
 
 
@@ -361,7 +361,7 @@ def _download_wireguard_go() -> None:
     mapped = {"x86_64": "amd64", "aarch64": "arm64"}.get(arch, "amd64")
     url = WG_GO_URL.format(arch=mapped)
     tmp = "/tmp/wg-go.tar.gz"
-    shell.run(["curl", "-fsSL", "-o", tmp, url], timeout=60)
+    shell.run(["curl", "-fL", "-o", tmp, url], timeout=60)
     shell.run(["tar", "xzf", tmp, "-C", "/usr/local/bin", "wireguard-go"], check=False)
     if os.path.exists(f"/usr/local/bin/wireguard-go"):
         os.chmod(WIREGUARD_GO_BIN, 0o755)
@@ -475,7 +475,7 @@ def _download_amneziawg_go() -> None:
     arch = (shell.run(["uname", "-m"], capture=True).stdout or "").strip()
     mapped = {"x86_64": "amd64", "aarch64": "arm64"}.get(arch, "amd64")
     url = AWG_GO_URL.format(arch=mapped)
-    shell.run(["curl", "-fsSL", "-o", AWG_GO_BIN, url], timeout=60)
+    shell.run(["curl", "-fL", "-o", AWG_GO_BIN, url], timeout=60)
     os.chmod(AWG_GO_BIN, 0o755)
 
 
@@ -528,7 +528,7 @@ def _install_warp_svc() -> None:
     if shutil.which("warp-cli"):
         return
     shell.run(["apt-get", "update"], timeout=60, check=False)
-    shell.run(["curl", "-fsSL",
+    shell.run(["curl", "-fL",
         "https://pkg.cloudflareclient.com/pubkey.gpg", "-o",
         "/tmp/cloudflare-warp.gpg.asc"], timeout=30, check=False)
     shell.run(["gpg", "--yes", "--dearmor", "-o",
@@ -709,22 +709,22 @@ def list_domains() -> list[str]:
 def check_ip() -> dict:
     import subprocess as _sp
     result: dict[str, str] = {"direct": "", "warp": "", "country": "", "error": ""}
-    r = _sp.run(["curl", "-sS", "--max-time", "15", "https://api.ipify.org"],
+    r = _sp.run(["curl", "-fL", "--max-time", "15", "https://api.ipify.org"],
                 capture_output=True, text=True, timeout=20)
     result["direct"] = r.stdout.strip() if r.returncode == 0 else ""
     method = config.vwn_conf_get("WARP_METHOD") or ""
     if method == "native":
-        r = _sp.run(["curl", "-sS", "--max-time", "15",
+        r = _sp.run(["curl", "-fL", "--max-time", "15",
                      "--socks5-hostname", "127.0.0.1:10808",
                      "https://api.ipify.org"],
                     capture_output=True, text=True, timeout=20)
     elif method == "warp-svc":
-        r = _sp.run(["curl", "-sS", "--max-time", "15",
+        r = _sp.run(["curl", "-fL", "--max-time", "15",
                      "-x", "socks5://127.0.0.1:40000",
                      "https://api.ipify.org"],
                     capture_output=True, text=True, timeout=20)
     elif method == "amnezia":
-        r = _sp.run(["curl", "-sS", "--max-time", "15",
+        r = _sp.run(["curl", "-fL", "--max-time", "15",
                      "--socks5-hostname", "127.0.0.1:10809",
                      "https://api.ipify.org"],
                     capture_output=True, text=True, timeout=20)

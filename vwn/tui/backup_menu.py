@@ -80,13 +80,13 @@ def manage_backup() -> None:
             if input(f"  Восстановить {fname}? (y/N): ").strip().lower() != "y":
                 continue
             for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
-                subprocess.run(["systemctl", "stop", svc], capture_output=True)
+                subprocess.run(["systemctl", "stop", svc])
             r = subprocess.run(["tar", "-xzf", os.path.join(backup_dir, fname), "-C", "/"],
                                capture_output=True, text=True)
             if r.returncode == 0:
-                subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+                subprocess.run(["systemctl", "daemon-reload"])
                 for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
-                    subprocess.run(["systemctl", "restart", svc], capture_output=True)
+                    subprocess.run(["systemctl", "restart", svc])
                 console.print("[bright_green]Восстановлено[/]")
             else:
                 console.print(f"[red]Ошибка: {r.stderr[:200]}[/]")

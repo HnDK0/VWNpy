@@ -132,7 +132,7 @@ WantedBy=multi-user.target
 def install(country: str = "", tunnel_mode: str = "plain") -> None:
     if not os.path.isfile(BIN):
         url = _bin_url()
-        shell.run(["curl", "-fsSL", "-o", BIN, url], timeout=120)
+        shell.run(["curl", "-fL", "-o", BIN, url], timeout=120)
         shell.run(["chmod", "+x", BIN])
     upstream = "socks5://127.0.0.1:40000" if tunnel_mode == "warp" else ""
     with open(MODE_FILE, "w") as f:

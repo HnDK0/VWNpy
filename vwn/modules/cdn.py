@@ -208,7 +208,7 @@ def check_ip(ip: str, timeout: int = 5) -> tuple[str, float, bool]:
     Returns (http_code, tcp_connect_ms, body_contains_h)."""
     try:
         r = shell.run([
-            "curl", "-s", "-o", "/dev/null", "-w",
+            "curl", "-o", "/dev/null", "-w",
             "%{http_code} %{time_connect}",
             "--max-time", str(timeout), "--connect-timeout", str(timeout),
             "--connect-to", f"cloudflare.com:443:{ip}:443",
@@ -218,7 +218,7 @@ def check_ip(ip: str, timeout: int = 5) -> tuple[str, float, bool]:
         hc = parts[0] if parts else "000"
         ms = round(float(parts[1]) * 1000, 2) if len(parts) >= 2 and parts[1] != "0" else 9999
         r2 = shell.run([
-            "curl", "-s", "--max-time", str(timeout),
+            "curl", "--max-time", str(timeout),
             "--connect-timeout", str(timeout),
             "--connect-to", f"cloudflare.com:443:{ip}:443",
             "https://cloudflare.com/cdn-cgi/trace",

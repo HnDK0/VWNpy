@@ -202,7 +202,7 @@ def _build_nginx_from_source() -> None:
     build_dir = tempfile.mkdtemp(prefix="nginx-build-")
     tarball = os.path.join(build_dir, "nginx.tar.gz")
     try:
-        shell.run(["curl", "-fsSL", NGINX_SRC_URL, "-o", tarball], check=True)
+        shell.run(["curl", "-fL", NGINX_SRC_URL, "-o", tarball], check=True)
         import tarfile
         with tarfile.open(tarball) as tf:
             tf.extractall(build_dir)  # плоская структура: nginx-VER/*
@@ -284,12 +284,12 @@ def _install_geo_databases() -> None:
     os.makedirs("/usr/local/share/xray", exist_ok=True)
     base = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
     for dat in ("geoip.dat", "geosite.dat"):
-        shell.run(["curl", "-fsSL", "--connect-timeout", "15", "--retry", "2",
+        shell.run(["curl", "-fL", "--connect-timeout", "15", "--retry", "2",
                    f"{base}/{dat}", "-o", f"/usr/local/share/xray/{dat}"],
                   check=False)
     if not os.path.isfile(MMDB_FILE):
         os.makedirs(os.path.dirname(MMDB_FILE), exist_ok=True)
-        shell.run(["curl", "-fsSL", "--connect-timeout", "15", "--retry", "2",
+        shell.run(["curl", "-fL", "--connect-timeout", "15", "--retry", "2",
                    "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
                    "-o", MMDB_FILE], check=False)
 
@@ -306,7 +306,7 @@ def install_xray() -> None:
             zip_url = (f"https://github.com/XTLS/Xray-core/releases/latest/"
                        f"download/Xray-linux-{tag}.zip")
             zip_path = os.path.join(tmp, "xray.zip")
-            shell.run(["curl", "-fsSL", "--connect-timeout", "30", "--retry", "2",
+            shell.run(["curl", "-fL", "--connect-timeout", "30", "--retry", "2",
                        zip_url, "-o", zip_path], check=True)
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(tmp)

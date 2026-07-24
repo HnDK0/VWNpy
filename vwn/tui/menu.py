@@ -25,14 +25,14 @@ def full_remove() -> None:
         return
     remove_cert = input("  Оставить SSL сертификат? (Y/n): ").strip().lower() == "n"
     for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
-        subprocess.run(["systemctl", "stop", svc], capture_output=True)
-        subprocess.run(["systemctl", "disable", svc], capture_output=True)
+        subprocess.run(["systemctl", "stop", svc])
+        subprocess.run(["systemctl", "disable", svc])
     paths = ["/usr/local/etc/xray", "/etc/nginx/conf.d/xray.conf",
              "/etc/nginx/conf.d/sub_map.conf", "/etc/systemd/system/xray-*.service"]
     if remove_cert:
         paths.append("/etc/nginx/cert")
-    subprocess.run(["rm", "-rf"] + paths, capture_output=True)
-    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+    subprocess.run(["rm", "-rf"] + paths)
+    subprocess.run(["systemctl", "daemon-reload"])
     console.print("[bright_green]VWNpy удалён" + (" (сертификат сохранён)[/]" if not remove_cert else "[/]"))
 
 
@@ -193,7 +193,7 @@ def run_menu() -> None:
                 from vwn.core.system import get_server_ip
                 server_ip = get_server_ip()
                 console.print(f"  Сервер IP: {server_ip or 'N/A'}")
-                r = subprocess.run(["curl", "-sS", "--max-time", "15",
+                r = subprocess.run(["curl", "-fL", "--max-time", "15",
                                     "--socks5-hostname", "127.0.0.1:40002",
                                     "https://api.ipify.org"],
                                    capture_output=True, text=True, timeout=20)
@@ -290,7 +290,7 @@ def run_menu() -> None:
                 host = s.get("host", "")
                 port = s.get("port", 0)
                 if proto in ("socks", "socks5"):
-                    r = subprocess.run(["curl", "-sS", "--max-time", "15",
+                    r = subprocess.run(["curl", "-fL", "--max-time", "15",
                                         "--socks5-hostname", f"{host}:{port}",
                                         "https://api.ipify.org"],
                                        capture_output=True, text=True, timeout=20)
@@ -314,10 +314,9 @@ def run_menu() -> None:
                     proc = None
                     import time
                     try:
-                        proc = subprocess.Popen(["/usr/local/bin/xray", "run", "-config", p],
-                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        proc = subprocess.Popen(["/usr/local/bin/xray", "run", "-config", p])
                         time.sleep(3)
-                        r = subprocess.run(["curl", "-sS", "--max-time", "15",
+                        r = subprocess.run(["curl", "-fL", "--max-time", "15",
                                             "--socks5-hostname", "127.0.0.1:19999",
                                             "https://api.ipify.org"],
                                            capture_output=True, text=True, timeout=20)

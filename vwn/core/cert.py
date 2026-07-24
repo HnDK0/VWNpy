@@ -84,7 +84,7 @@ def _ensure_acme(home: str) -> None:
         return
     # fallback: git clone если curl https://get.acme.sh не работает (DNS хостера)
     installer = os.path.join(home, "acme.sh-install.sh")
-    ok = shell.run(["curl", "-fsSL", "--connect-timeout", "10",
+    ok = shell.run(["curl", "-fL", "--connect-timeout", "10",
                     "https://get.acme.sh", "-o", installer], check=False)
     if ok.returncode == 0:
         shell.run(["sh", installer], check=True)

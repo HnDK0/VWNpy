@@ -128,7 +128,7 @@ def _diag_network() -> None:
 
 def _diag_connectivity() -> None:
     console.print("--- Connectivity ---")
-    r = shell.run(["curl", "-sS", "--connect-timeout", "8", "--max-time", "15",
+    r = shell.run(["curl", "-fL", "--connect-timeout", "8", "--max-time", "15",
                     "https://api.ipify.org"], capture=True, check=False, timeout=25)
     if r.returncode == 0 and r.stdout:
         console.print(f"  Internet: {_ok(r.stdout.strip())}")
@@ -136,7 +136,7 @@ def _diag_connectivity() -> None:
         console.print(f"  Internet: {_fail('UNAVAILABLE')}")
     domain = config.vwn_conf_get("DOMAIN")
     if domain:
-        r = shell.run(["curl", "-sS", "--connect-timeout", "8", "--max-time", "15",
+        r = shell.run(["curl", "-fL", "--connect-timeout", "8", "--max-time", "15",
                         "-o", "/dev/null", "-w", "%{http_code}",
                         f"https://{domain}/"], capture=True, check=False, timeout=25)
         code = r.stdout.strip() if r.returncode == 0 else "000"

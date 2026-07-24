@@ -50,7 +50,7 @@ def _add_official_repo():
     if not cn or os.path.isfile(REPO_FILE):
         return False
     _runcmd(["apt-get", "install", "-y", "apt-transport-https", "gpg"], check=False)
-    _runcmd(["curl", "-fsSL",
+    _runcmd(["curl", "-fL",
              "https://deb.torproject.org/torproject.org/"
              "A3C4F0F979CAA22CDBA8F512EE8CBC9E886DDD89.asc",
              "-o", "/tmp/tor-key.asc"], check=False)
@@ -60,7 +60,7 @@ def _add_official_repo():
     with open(REPO_FILE, "w") as f:
         f.write(f"deb [signed-by={KEYRING}] https://deb.torproject.org/torproject.org {cn} main\n")
         f.write(f"deb-src [signed-by={KEYRING}] https://deb.torproject.org/torproject.org {cn} main\n")
-    _runcmd(["apt-get", "update", "-qq"], check=False)
+    _runcmd(["apt-get", "update"], check=False)
     return True
 
 
@@ -145,11 +145,11 @@ def renew_circuit() -> None:
 def check_ip() -> dict:
     import subprocess
     result = {"direct": "", "tor": "", "country": "", "error": ""}
-    r = subprocess.run(["curl", "-sS", "--max-time", "15", "https://api.ipify.org"],
+    r = subprocess.run(["curl", "-fL", "--max-time", "15", "https://api.ipify.org"],
                        capture_output=True, text=True, timeout=20)
     result["direct"] = r.stdout.strip() if r.returncode == 0 else ""
     for attempt in range(3):
-        r = subprocess.run(["curl", "-sS", "--max-time", "15",
+        r = subprocess.run(["curl", "-fL", "--max-time", "15",
                             "--socks5-hostname", f"127.0.0.1:{PORT}",
                             "https://api.ipify.org"],
                            capture_output=True, text=True, timeout=20)

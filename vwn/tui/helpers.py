@@ -73,6 +73,12 @@ def wait_key() -> None:
 def run_task(title: str, fn) -> None:
     try:
         return fn()
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]{title}: {e}[/]")
+        if e.stderr:
+            console.print(f"[red]{e.stderr[:500]}[/]")
+        elif e.output:
+            console.print(f"[red]{e.output[:500]}[/]")
     except Exception as e:
         console.print(f"[red]{title}: ошибка — {e}[/]")
     return None
