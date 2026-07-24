@@ -115,22 +115,34 @@ def sub_rebuild():
 
 @cli.command()
 def update():
-    """Обновить VWNpy с git (git pull + pip install)."""
-    import subprocess, sys
-    repo_dir = "/opt/vwn"
-    click.echo("Обновление VWNpy...")
-    r = subprocess.run(["git", "-C", repo_dir, "pull", "--ff-only"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        click.echo(f"git pull ошибка: {r.stderr.strip()}", err=True)
-        return
-    click.echo(r.stdout.strip() or "Уже актуально.")
-    r2 = subprocess.run([sys.executable, "-m", "pip", "install", "-e", repo_dir],
-                        capture_output=True, text=True)
-    if r2.returncode == 0:
-        click.echo("pip install OK.")
-    else:
-        click.echo(f"pip install ошибка: {r2.stderr.strip()}", err=True)
+    """Обновить VWNpy из GitHub Releases (скачать wheel)."""
+    import glob, os, shutil, subprocess, sys, tempfile, zipfile
+    from urllib.request import urlretrieve
+
+    REPO = "https://github.com/HnDK0/VWNpy"
+    tmpdir = tempfile.mkdtemp()
+    try:
+        click.echo("Скачивание обновления...")
+        urlretrieve(f"{REPO}/releases/latest/download/vwnpy-wheel.zip",
+                    os.path.join(tmpdir, "wheel.zip"))
+        wheel_dir = os.path.join(tmpdir, "wheel")
+        with zipfile.ZipFile(os.path.join(tmpdir, "wheel.zip")) as zf:
+            zf.extractall(wheel_dir)
+        whls = glob.glob(os.path.join(wheel_dir, "*.whl"))
+        if not whls:
+            click.echo("Ошибка: wheel не найден в архиве", err=True)
+            return
+        r = subprocess.run([sys.executable, "-m", "pip", "install",
+                            "--force-reinstall", whls[0]],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            click.echo("Готово. vwnpy обновлена.")
+        else:
+            click.echo(f"pip install ошибка: {r.stderr.strip()}", err=True)
+    except Exception as exc:
+        click.echo(f"Ошибка обновления: {exc}", err=True)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @cli.command(name="update-xray")

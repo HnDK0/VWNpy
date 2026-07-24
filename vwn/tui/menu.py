@@ -1176,12 +1176,28 @@ def _update_xray() -> None:
 
 
 def _update_vwn() -> None:
-    import subprocess, sys
-    repo_dir = "/opt/vwn"
-    _run_task("git pull", lambda: subprocess.run(
-        ["git", "-C", repo_dir, "pull", "--ff-only"], check=True))
-    _run_task("pip install", lambda: subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", repo_dir], check=True))
+    import glob, os, shutil, subprocess, sys, tempfile, zipfile
+    from urllib.request import urlretrieve
+
+    REPO = "https://github.com/HnDK0/VWNpy"
+    tmpdir = tempfile.mkdtemp()
+    try:
+        urlretrieve(f"{REPO}/releases/latest/download/vwnpy-wheel.zip",
+                    os.path.join(tmpdir, "wheel.zip"))
+        wheel_dir = os.path.join(tmpdir, "wheel")
+        with zipfile.ZipFile(os.path.join(tmpdir, "wheel.zip")) as zf:
+            zf.extractall(wheel_dir)
+        whls = glob.glob(os.path.join(wheel_dir, "*.whl"))
+        if not whls:
+            console.print("[red]wheel не найден в архиве[/]")
+            return
+        _run_task("pip install --force-reinstall",
+                  lambda: subprocess.run(
+                      [sys.executable, "-m", "pip", "install",
+                       "--force-reinstall", whls[0]],
+                      check=True))
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def run_menu() -> None:
