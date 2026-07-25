@@ -2,7 +2,9 @@
 
 import datetime
 import os
+import shutil
 import subprocess
+import tempfile
 
 from vwn.core import config, shell
 from vwn.core.color import console
@@ -164,3 +166,28 @@ def remove_domain_flow(tag: str) -> None:
 
 def restart_xray_services() -> None:
     run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
+
+
+def edit_list_in_editor(file_path: str) -> None:
+    """Открыть файл списока в $EDITOR (nano по умолчанию) для редактирования."""
+    if not os.path.isfile(file_path):
+        console.print(f"  [yellow]Файл не найден: {file_path}[/]")
+        return
+    editor = os.environ.get("EDITOR") or "nano"
+    tmp_path = None
+    try:
+        with open(file_path) as f:
+            content = f.read()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        console.print(f"  Открываю {editor}...")
+        result = subprocess.run([editor, tmp_path])
+        if result.returncode == 0:
+            shutil.move(tmp_path, file_path)
+            tmp_path = None
+        else:
+            console.print("  [yellow]Редактирование отменено[/]")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)

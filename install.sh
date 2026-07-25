@@ -45,10 +45,10 @@ if ! command -v pip3 &>/dev/null; then
 fi
 PIP_ROOT_USER_ACTION=ignore python3 -m pip install --upgrade pip -q
 
-# 2. curl + unzip (нужны для скачивания wheel)
-if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null; then
-  echo ">>> Установка curl, unzip..."
-  apt-get install -y -qq curl unzip
+# 2. curl + unzip + nano (нужны для скачивания wheel и редактирования списков)
+if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null || ! command -v nano &>/dev/null; then
+  echo ">>> Установка curl, unzip, nano..."
+  apt-get install -y -qq curl unzip nano
 fi
 
 # 3. Скачать и установить wheel (или из локальной папки)

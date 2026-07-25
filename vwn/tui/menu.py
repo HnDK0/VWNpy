@@ -7,8 +7,8 @@ from vwn.core.color import console
 from vwn.tui.dashboard import dashboard
 from vwn.tui.backup_menu import manage_backup
 from vwn.tui.cdn_menu import manage_cdn
-from vwn.tui.helpers import (add_domain_flow, pick_country, remove_domain_flow,
-    run_cmd, run_task, wait_key)
+from vwn.tui.helpers import (add_domain_flow, edit_list_in_editor, pick_country,
+    remove_domain_flow, run_cmd, run_task, wait_key)
 from vwn.tui.logs_menu import manage_logs
 from vwn.tui.privacy_menu import manage_privacy
 from vwn.tui.protocols_menu import manage_reality, manage_ws_xhttp
@@ -171,11 +171,20 @@ def run_menu() -> None:
                 else:
                     run_cmd("journalctl -u xray-reality -n 50 --no-pager")
 
+            def _warp_edit_domains() -> None:
+                from vwn.modules.warp import _tag_for_method, status as _st
+                from vwn.modules._domains import _file
+                method = _st()["method"]
+                if not method:
+                    console.print("  [yellow]WARP не установлен[/]"); return
+                edit_list_in_editor(_file(_tag_for_method(method)))
+
             manage_tunnel("WARP", "", "warp", has_install=True,
             extra={
                 "Сменить метод": _warp_change_method,
                 "Добавить домен": lambda: _warp_add_domain(),
                 "Удалить домен": lambda: _warp_remove_domain(),
+                "Редактировать файл domains": _warp_edit_domains,
                               "Проверить IP через WARP": _warp_check_ip,
                               "Показать логи": _warp_logs,
                           })
@@ -218,6 +227,8 @@ def run_menu() -> None:
                               "Сменить страну": _ps_change_country,
                               "Добавить домен": lambda: add_domain_flow("psiphon"),
                               "Удалить домен": lambda: remove_domain_flow("psiphon"),
+                              "Редактировать файл domains": lambda: edit_list_in_editor(
+                                  os.path.join(config.XRAY_DIR, "psiphon_domains.txt")),
                               "Проверить IP через Psiphon": _ps_check_ip,
                           })
         elif choice == 6:
@@ -275,6 +286,8 @@ def run_menu() -> None:
                               "Сменить страну": _tor_change_country,
                               "Добавить домен": lambda: add_domain_flow("tor"),
                               "Удалить домен": lambda: remove_domain_flow("tor"),
+                              "Редактировать файл domains": lambda: edit_list_in_editor(
+                                  os.path.join(config.XRAY_DIR, "tor_domains.txt")),
                               "Проверить IP через Tor": _tor_check_ip,
                               "Обновить цепь (новый IP)": _tor_renew,
                               "Управление мостами": _tor_bridges,
@@ -337,6 +350,8 @@ def run_menu() -> None:
                           extra={
                               "Добавить домен": lambda: add_domain_flow("relay"),
                               "Удалить домен": lambda: remove_domain_flow("relay"),
+                              "Редактировать файл domains": lambda: edit_list_in_editor(
+                                  os.path.join(config.XRAY_DIR, "relay_domains.txt")),
                               "Проверить IP через Relay": _rl_check_ip,
                           })
         elif choice == 8:
