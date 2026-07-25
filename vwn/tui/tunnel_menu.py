@@ -70,10 +70,12 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
         mode = get_tunnel_mode_from_file(config_path, tag)
         active = shell.service_active(svc) if svc else False
         country = ""
+        method = ""
         if tag == "warp":
             from vwn.modules.warp import status as warp_st
             ws = warp_st()
             active = bool(ws["method"])
+            method = ws.get("method", "")
         elif tag == "psiphon":
             from vwn.modules.psiphon import status as ps_st
             ps = ps_st()
@@ -85,7 +87,7 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
             active = ts["active"]
             country = ts.get("country", "")
         console.print(f"\n[bold]{name}[/]")
-        console.print(f"  Статус: {render_tunnel_status(name, mode, active, country)}")
+        console.print(f"  Статус: {render_tunnel_status(name, mode, active, country, method)}")
         idx = 1
         if has_install:
             console.print(f"  {idx}. Установить")

@@ -65,7 +65,7 @@ def get_tunnel_mode_from_file(path: str, tag: str) -> str:
     return get_tunnel_mode(cfg, tag)
 
 
-def render_tunnel_status(name: str, mode: str, active: bool, country: str = "") -> str:
+def render_tunnel_status(name: str, mode: str, active: bool, country: str = "", method: str = "") -> str:
     if not active:
         state = C["red"] + "OFF" + C["reset"]
     elif mode == "Global":
@@ -74,6 +74,8 @@ def render_tunnel_status(name: str, mode: str, active: bool, country: str = "") 
         state = C["green"] + "ACTIVE | Split" + C["reset"]
     else:
         state = C["yellow"] + "ACTIVE | OFF" + C["reset"]
+    if method:
+        state = state.replace("ACTIVE", f"ACTIVE | {method}", 1)
     if country:
         state += f" ({country})"
     return f"{name:10} : {state}"
