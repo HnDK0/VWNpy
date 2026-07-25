@@ -212,3 +212,18 @@ def run_install(argv: "list | None" = None) -> None:
     for svc in ("xray-reality", "xray-ws", "xray-xhttp", "nginx"):
         shell.run_task(f"Включение и старт {svc}",
                        lambda s=svc: _enable_start(s))
+
+    # ── Пост-инсталл ──────────────────────────────────────────────
+    user_list = users.list_users()
+    if user_list:
+        u = user_list[0]
+        sub_url = f"https://{opts.domain}/sub/{u['label']}_{u['token']}.txt"
+        html_url = f"https://{opts.domain}/sub/{u['label']}_{u['token']}.html"
+        console.print(f"\n{C['green']}=== Установка завершена ==={C['reset']}")
+        console.print(f"\n  Подписка: {C['cyan']}{sub_url}{C['reset']}")
+        console.print(f"\n  {C['yellow']}Полезные команды:{C['reset']}")
+        console.print(f"    vwn menu          TUI-меню (управление, QR-коды)")
+        console.print(f"    vwn qr            QR-код первого конфига в терминале")
+        console.print(f"    vwn status        Диагностика сервера")
+        console.print(f"\n  Откройте в браузере для сканирования QR:")
+        console.print(f"    {C['cyan']}{html_url}{C['reset']}\n")
