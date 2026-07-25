@@ -182,7 +182,7 @@ def list_domains() -> list[str]:
 
 
 def reapply_routing() -> None:
-    """Повторно применить routing rule для Psiphon (после rebuild_configs)."""
+    """Повторно применить outbound + routing rule для Psiphon (после rebuild_configs)."""
     from vwn.core import config as _cfg
     mode = _cfg.vwn_conf_get("PSIPHON_TUNNEL_MODE") or ""
     if not mode:
@@ -190,6 +190,7 @@ def reapply_routing() -> None:
     from vwn.modules._outbound import _paths
     from vwn.modules.tunnels import insert_before_catchall
     from vwn.modules._domains import list_domains as _ld
+    # ponytail: если outbound нет (rebuild перезаписал конфиги) — добавляем
     has_outbound = False
     for path in _paths():
         if not os.path.isfile(path):
@@ -200,7 +201,7 @@ def reapply_routing() -> None:
             has_outbound = True
             break
     if not has_outbound:
-        return
+        add_outbound(TAG, "socks", PORT)
     domains = _ld(TAG) if mode == "Split" else []
     if mode == "Split" and not domains:
         domains = ["whoer.net"]

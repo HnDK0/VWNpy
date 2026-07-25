@@ -302,7 +302,7 @@ def list_domains() -> list[str]:
 
 
 def reapply_routing() -> None:
-    """Повторно применить routing rule для Tor (после rebuild_configs)."""
+    """Повторно применить outbound + routing rule для Tor (после rebuild_configs)."""
     import json as _j
     from vwn.core import config as _cfg
     mode = _cfg.vwn_conf_get("TOR_TUNNEL_MODE") or ""
@@ -310,6 +310,7 @@ def reapply_routing() -> None:
         return
     from vwn.modules._outbound import _paths
     from vwn.modules.tunnels import insert_before_catchall
+    # ponytail: если outbound нет (rebuild перезаписал конфиги) — добавляем
     has_outbound = False
     for path in _paths():
         if not os.path.isfile(path):
@@ -320,7 +321,7 @@ def reapply_routing() -> None:
             has_outbound = True
             break
     if not has_outbound:
-        return
+        add_outbound(TAG, "socks", PORT)
     domains = list_domains() if mode == "Split" else []
     if mode == "Global":
         rule = {"type": "field", "port": "0-65535", "outboundTag": TAG}

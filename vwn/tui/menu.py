@@ -179,15 +179,29 @@ def run_menu() -> None:
                     console.print("  [yellow]WARP не установлен[/]"); return
                 edit_list_in_editor(_file(_tag_for_method(method)))
 
+            def _warp_toggle() -> None:
+                from vwn.modules.warp import status as _st, stop as _stop, start as _start
+                from vwn.modules.tunnels import get_tunnel_mode_from_file
+                st = _st()
+                if not st["method"]:
+                    console.print("  [yellow]WARP не установлен[/]"); return
+                cfg_path = os.path.join(config.XRAY_DIR, "config.json")
+                mode = get_tunnel_mode_from_file(cfg_path, "warp")
+                if mode != "OFF":
+                    run_task("Остановка WARP", _stop)
+                else:
+                    run_task("Запуск WARP", _start)
+
             manage_tunnel("WARP", "", "warp", has_install=True,
             extra={
                 "Сменить метод": _warp_change_method,
                 "Добавить домен": lambda: _warp_add_domain(),
                 "Удалить домен": lambda: _warp_remove_domain(),
                 "Редактировать файл domains": _warp_edit_domains,
-                              "Проверить IP через WARP": _warp_check_ip,
-                              "Показать логи": _warp_logs,
-                          })
+                "Проверить IP через WARP": _warp_check_ip,
+                "Остановить/Запустить WARP": _warp_toggle,
+                "Показать логи": _warp_logs,
+            })
         elif choice == 5:
             def _ps_change_country() -> None:
                 from vwn.modules.psiphon import COUNTRIES as PS_COUNTRIES, MODE_FILE, _write_config as _wc

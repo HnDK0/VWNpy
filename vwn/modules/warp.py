@@ -504,6 +504,9 @@ def install_amnezia() -> None:
         j = shell.run(["journalctl", "-u", AWG_SERVICE, "-n", "10", "--no-pager"],
                       capture=True, check=False)
         raise RuntimeError(f"{AWG_SERVICE} не запустился:\n{j.stdout or j.stderr}")
+    # ponytail: проверяем что интерфейс действительно поднят
+    if not _check_tunnel_alive("amnezia"):
+        raise RuntimeError(f"Интерфейс {AWG_IFACE} не появился после запуска {AWG_SERVICE}")
     _apply_amnezia_outbound()
     config.vwn_conf_set("WARP_METHOD", "amnezia")
     config.vwn_conf_set("WARP_ENDPOINT", endpoint)
@@ -601,6 +604,9 @@ def install_warp_svc() -> None:
     _install_warp_svc()
     print("  Configuring...")
     _config_warp_svc()
+    # ponytail: проверяем что warp-svc реально подключился
+    if not _check_tunnel_alive("warp-svc"):
+        print("  Warning: warp-svc may not be connected, check 'warp-cli status'")
     print("  Applying Xray outbound...")
     _apply_warp_svc_outbound()
     config.vwn_conf_set("WARP_METHOD", "warp-svc")
@@ -652,6 +658,80 @@ def remove() -> None:
     print("  WARP removed")
 
 
+# ponytail: stop/start без удаления (FIX #5 из оригинала).
+# Stop убирает outbound + routing из конфигов, ключи и конфиг остаются.
+# Start восстанавливает outbound + routing из сохранённых данных.
+
+def stop() -> None:
+    """Остановить WARP без удаления конфига и ключей."""
+    method = config.vwn_conf_get("WARP_METHOD") or ""
+    if not method:
+        print("  WARP не настроен")
+        return
+    tag = _tag_for_method(method)
+    if method == "native":
+        pass  # ponytail: native — kernel wireguard, нет сервиса для остановки
+    elif method == "amnezia":
+        shell.run(["systemctl", "stop", AWG_SERVICE], check=False)
+    elif method == "warp-svc":
+        shell.run(["warp-cli", "disconnect"], check=False)
+    _remove_outbound(method)
+    # ponytail: WARP_TUNNEL_MODE НЕ удаляем — start() восстановит routing
+    shell.run(["systemctl", "restart", "xray-reality", "xray-ws", "xray-xhttp"],
+              check=False)
+    print(f"  WARP ({method}) остановлен — ключи и конфиг сохранены")
+
+
+def start() -> None:
+    """Запустить ранее остановленный WARP (без переустановки)."""
+    method = config.vwn_conf_get("WARP_METHOD") or ""
+    if not method:
+        print("  WARP не настроен")
+        return
+    keys = _load_saved_keys()
+    endpoint = config.vwn_conf_get("WARP_ENDPOINT") or ""
+    if method == "native":
+        if not keys or not endpoint:
+            print("  Ключи WARP не найдены, переустановите WARP")
+            return
+        _apply_native_outbound(keys["WARP_PRIVATE_KEY"], keys["WARP_IPV4"], endpoint)
+    elif method == "amnezia":
+        if not shell.service_active(AWG_SERVICE):
+            shell.run(["systemctl", "start", AWG_SERVICE], check=False, timeout=30)
+            time.sleep(3)
+        if not _check_tunnel_alive("amnezia"):
+            print(f"  Интерфейс {AWG_IFACE} не поднялся")
+            return
+        _apply_amnezia_outbound()
+    elif method == "warp-svc":
+        shell.run(["warp-cli", "connect"], check=False)
+        time.sleep(5)
+        _apply_warp_svc_outbound()
+    tag = _tag_for_method(method)
+    mode = config.vwn_conf_get("WARP_TUNNEL_MODE") or ""
+    if mode and _check_tunnel_alive(method):
+        _add_routing_rule_if_missing(tag, mode)
+    shell.run(["systemctl", "restart", "xray-reality", "xray-ws", "xray-xhttp"],
+              check=False)
+    print(f"  WARP ({method}) запущен")
+
+
+def _check_tunnel_alive(method: str) -> bool:
+    """Проверить, что туннель WARP реально работает перед добавлением routing."""
+    if method == "native":
+        keys = _load_saved_keys()
+        endpoint = config.vwn_conf_get("WARP_ENDPOINT") or ""
+        return bool(keys.get("WARP_PRIVATE_KEY") and endpoint)
+    elif method == "amnezia":
+        r = shell.run(["ip", "link", "show", AWG_IFACE],
+                      check=False, capture=True, timeout=5)
+        return r.returncode == 0
+    elif method == "warp-svc":
+        r = shell.run(["warp-cli", "status"], check=False, capture=True, timeout=10)
+        return r.returncode == 0 and "Connected" in (r.stdout or "")
+    return False
+
+
 def reapply_warp() -> None:
     """Повторно применить WARP outbound ко всем конфигам (после provision)."""
     method = config.vwn_conf_get("WARP_METHOD") or ""
@@ -667,8 +747,9 @@ def reapply_warp() -> None:
         _apply_amnezia_outbound()
     elif method == "warp-svc":
         _apply_warp_svc_outbound()
-    mode = config.vwn_conf_get("WARP_TUNNEL_MODE") or "Global"
-    _add_routing_rule_if_missing(tag, mode)
+    mode = config.vwn_conf_get("WARP_TUNNEL_MODE") or ""
+    if mode and _check_tunnel_alive(method):
+        _add_routing_rule_if_missing(tag, mode)
 
 
 def _load_saved_keys() -> dict[str, str]:

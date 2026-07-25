@@ -15,18 +15,13 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
         return tag
     from vwn.modules._outbound import _paths
     from vwn.modules.tunnels import _match_tunnel_tag
+    actual_tag = _resolve_actual_tag(tag)
     for path in _paths():
         if not os.path.isfile(path):
             continue
         with open(path) as f:
             cfg = json.load(f)
         rules = cfg.setdefault("routing", {}).setdefault("rules", [])
-        actual_tag = tag
-        if tag == "warp":
-            for o in cfg.get("outbounds", []):
-                if _match_tunnel_tag(o.get("tag", ""), "warp"):
-                    actual_tag = o["tag"]
-                    break
         rules = [r for r in rules if not (_match_tunnel_tag(r.get("outboundTag", ""), tag) and "inboundTag" not in r)]
         if mode == "Global":
             rules = [r for r in rules
@@ -50,6 +45,20 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
     else:
         _cfg.vwn_conf_del(conf_key)
     return actual_tag
+
+
+def _resolve_actual_tag(tag: str) -> str:
+    """Определить реальный outbound tag для туннеля.
+
+    Для warp: читаем WARP_METHOD из vwn.conf и резолвим через _tag_for_method().
+    Для остальных: tag используется напрямую.
+    """
+    if tag == "warp":
+        from vwn.modules.warp import _tag_for_method
+        method = config.vwn_conf_get("WARP_METHOD") or ""
+        if method:
+            return _tag_for_method(method)
+    return tag
 
 
 def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,

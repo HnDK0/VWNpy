@@ -38,15 +38,11 @@ def _dns() -> dict:
 
 
 def _outbounds() -> list:
+    # ponytail: outbound'ы туннелей (warp/psiphon/tor) добавляются
+    # модулями при установке через add_outbound(). Здесь только базовые.
     return [
         {"tag": "dns-out", "protocol": "dns"},
         {"tag": "free", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
-        {"tag": "warp-svc", "protocol": "socks",
-         "settings": {"servers": [{"address": "127.0.0.1", "port": 40000}]}},
-        {"tag": "psiphon", "protocol": "socks",
-         "settings": {"servers": [{"address": "127.0.0.1", "port": 40002}]}},
-        {"tag": "tor", "protocol": "socks",
-         "settings": {"servers": [{"address": "127.0.0.1", "port": 40003}]}},
         {"tag": "block", "protocol": "blackhole"},
     ]
 
