@@ -235,9 +235,9 @@ def test_domains_apply_empty_preserves_outbound(monkeypatch, tmp_path):
     with open(p, "w") as f:
         json.dump(cfg, f)
 
-    domains_file = tmp_path / "warp-native_domains.txt"
+    domains_file = tmp_path / "warp_domains.txt"
     domains_file.write_text("example.com\n", encoding="utf-8")
-    _domains.remove_domain("warp-native", 0)
+    _domains.remove_domain("warp", 0, routing_tag="warp-native")
 
     with open(p) as f:
         result = json.load(f)
@@ -263,9 +263,9 @@ def test_add_domain_blocked_in_global(monkeypatch, tmp_path):
     with open(p, "w") as f:
         json.dump(cfg, f)
 
-    ok = _domains.add_domain("warp-native", "example.com")
+    ok = _domains.add_domain("warp", "example.com", routing_tag="warp-native")
     assert ok is False, "should reject domain in Global mode"
-    assert not (tmp_path / "warp-native_domains.txt").exists(), "no domain file created"
+    assert not (tmp_path / "warp_domains.txt").exists(), "no domain file created"
 
 
 def test_add_domain_allowed_in_split(monkeypatch, tmp_path):
@@ -282,9 +282,9 @@ def test_add_domain_allowed_in_split(monkeypatch, tmp_path):
     with open(p, "w") as f:
         json.dump(cfg, f)
 
-    ok = _domains.add_domain("warp-native", "example.com")
+    ok = _domains.add_domain("warp", "example.com", routing_tag="warp-native")
     assert ok is True, "should allow domain in Split mode"
-    assert (tmp_path / "warp-native_domains.txt").exists()
+    assert (tmp_path / "warp_domains.txt").exists()
 
 
 def test_add_domain_blocked_in_global_psiphon(monkeypatch, tmp_path):

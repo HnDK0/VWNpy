@@ -61,6 +61,7 @@ def manage_cdn() -> None:
         console.print(" 13. Проверить IP")
         console.print(" 14. Настройки сканера")
         console.print(" 15. Редактировать список IP (cdn_ips.txt)")
+        console.print(" 16. Редактировать кэш сканера (cdn_found.txt)")
         console.print("  0. Назад")
         val = input("> ").strip()
         if val == "0":
@@ -133,4 +134,7 @@ def manage_cdn() -> None:
         elif val == "15":
             from vwn.modules.cdn import IPS_FILE
             edit_list_in_editor(IPS_FILE)
+        elif val == "16":
+            from vwn.modules.cdn import FOUND_FILE
+            edit_list_in_editor(FOUND_FILE)
         wait_key()

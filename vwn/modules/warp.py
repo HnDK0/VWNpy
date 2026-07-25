@@ -36,6 +36,7 @@ AWG_QUICK_BIN = "/usr/local/bin/awg-quick"
 WG_QUICK_BIN = "/usr/bin/wg-quick"
 
 WARP_TAG = "warp"
+WARP_DOMAIN_TAG = "warp"
 WARP_TAGS = {
     "native": "warp-native",
     "amnezia": "warp-amnezia",
@@ -105,7 +106,7 @@ def _add_routing_rule_if_missing(tag: str, mode: str = "Global") -> None:
             insert_before_catchall(rules, {"type": "field", "port": "0-65535", "outboundTag": tag})
         elif mode == "Split":
             from vwn.modules._domains import list_domains
-            domains = list_domains(tag)
+            domains = list_domains(WARP_DOMAIN_TAG)
             if not domains:
                 domains = ["whoer.net"]
             domains_json = [f"domain:{d}" for d in domains]
@@ -193,8 +194,8 @@ def _generate_keys() -> dict[str, str]:
 
 def _pick_endpoint(prefer_port: int = 2408) -> str:
     ranges = ["162.159.192", "162.159.195", "188.114.96",
-              "188.114.97", "188.114.98"]
-    suffixes = [1, 5, 10]
+              "188.114.97", "188.114.98", "188.114.99", "8.47.69"]
+    suffixes = [1, 5, 10, 50, 100, 200]
     candidates = [f"{r}.{s}" for r in ranges for s in suffixes]
     results: dict[str, float] = {}
     for ip in candidates:
@@ -877,19 +878,18 @@ def status() -> dict:
 def add_domain(domain: str) -> bool:
     from vwn.modules._domains import add_domain as _ad
     method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
-    return _ad(_tag_for_method(method), domain)
+    return _ad(WARP_DOMAIN_TAG, domain, routing_tag=_tag_for_method(method))
 
 
 def remove_domain(index: int) -> None:
     from vwn.modules._domains import remove_domain as _rd
     method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
-    _rd(_tag_for_method(method), index)
+    _rd(WARP_DOMAIN_TAG, index, routing_tag=_tag_for_method(method))
 
 
 def list_domains() -> list[str]:
     from vwn.modules._domains import list_domains as _ld
-    method = config.vwn_conf_get("WARP_METHOD") or "warp-svc"
-    return _ld(_tag_for_method(method))
+    return _ld(WARP_DOMAIN_TAG)
 
 
 def check_ip() -> dict:

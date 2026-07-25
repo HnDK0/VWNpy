@@ -19,10 +19,11 @@ def list_domains(tag: str) -> list[str]:
     return [l.strip() for l in open(p) if l.strip()]
 
 
-def add_domain(tag: str, domain: str) -> bool:
+def add_domain(tag: str, domain: str, routing_tag: str | None = None) -> bool:
     """Добавить домен в список. Возвращает False если туннель в Global."""
-    rules = _read_routing_rules(tag)
-    if _is_global(rules, tag):
+    rt = routing_tag or tag
+    rules = _read_routing_rules(rt)
+    if _is_global(rules, rt):
         return False
     p = _file(tag)
     os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -31,11 +32,11 @@ def add_domain(tag: str, domain: str) -> bool:
     lines = sorted(set(l.strip() for l in open(p) if l.strip()))
     with open(p, "w") as f:
         f.write("\n".join(lines) + "\n")
-    _apply(tag)
+    _apply(tag, routing_tag)
     return True
 
 
-def remove_domain(tag: str, index: int) -> None:
+def remove_domain(tag: str, index: int, routing_tag: str | None = None) -> None:
     p = _file(tag)
     if not os.path.isfile(p):
         return
@@ -44,7 +45,7 @@ def remove_domain(tag: str, index: int) -> None:
         lines.pop(index)
         with open(p, "w") as f:
             f.write("\n".join(lines) + "\n" if lines else "")
-        _apply(tag)
+        _apply(tag, routing_tag)
 
 
 def remove_file(tag: str) -> None:
@@ -75,14 +76,15 @@ def _is_global(rules: list, tag: str) -> bool:
     return False
 
 
-def _apply(tag: str) -> None:
+def _apply(tag: str, routing_tag: str | None = None) -> None:
     domains = list_domains(tag)
+    rt = routing_tag or tag
     for path in _paths():
         if not os.path.isfile(path):
             continue
         with open(path) as f:
             cfg = json.load(f)
-        has_outbound = any(o.get("tag") == tag for o in cfg.get("outbounds", []))
+        has_outbound = any(o.get("tag") == rt for o in cfg.get("outbounds", []))
         if not has_outbound:
             continue
         if not domains:
@@ -90,13 +92,13 @@ def _apply(tag: str) -> None:
             cfg.setdefault("routing", {}).setdefault("rules", [])
             cfg["routing"]["rules"] = [
                 r for r in cfg["routing"]["rules"]
-                if not (r.get("outboundTag") == tag
+                if not (r.get("outboundTag") == rt
                         and not r.get("inboundTag")
                         and "domain" in r)]
         else:
             domains_json = [f"domain:{d}" for d in domains]
             for r in cfg.setdefault("routing", {}).setdefault("rules", []):
-                if (r.get("outboundTag") == tag
+                if (r.get("outboundTag") == rt
                         and not r.get("inboundTag")
                         and r.get("port") != "0-65535"):
                     r["domain"] = domains_json

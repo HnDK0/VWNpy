@@ -172,12 +172,13 @@ def run_menu() -> None:
                     run_cmd("journalctl -u xray-reality -n 50 --no-pager")
 
             def _warp_edit_domains() -> None:
-                from vwn.modules.warp import _tag_for_method, status as _st
-                from vwn.modules._domains import _file
+                from vwn.modules.warp import status as _st, _tag_for_method
+                from vwn.modules._domains import _file, _apply
                 method = _st()["method"]
                 if not method:
                     console.print("  [yellow]WARP не установлен[/]"); return
-                edit_list_in_editor(_file(_tag_for_method(method)))
+                if edit_list_in_editor(_file("warp")):
+                    _apply("warp", routing_tag=_tag_for_method(method))
 
             def _warp_toggle() -> None:
                 from vwn.modules.warp import status as _st, stop as _stop, start as _start
@@ -236,13 +237,17 @@ def run_menu() -> None:
                     m = __import__("re").search(r'"iso_code":\s+"([A-Z]{2})"', r2.stdout or "")
                     country = m.group(1) if m else "N/A"
                     console.print(f"  Выход geo: {country}")
+            def _ps_edit_domains() -> None:
+                from vwn.modules._domains import _file, _apply
+                if edit_list_in_editor(_file("psiphon")):
+                    _apply("psiphon")
+
             manage_tunnel("Psiphon", "psiphon.service", "psiphon", has_install=True,
                           extra={
                               "Сменить страну": _ps_change_country,
                               "Добавить домен": lambda: add_domain_flow("psiphon"),
                               "Удалить домен": lambda: remove_domain_flow("psiphon"),
-                              "Редактировать файл domains": lambda: edit_list_in_editor(
-                                  os.path.join(config.XRAY_DIR, "psiphon_domains.txt")),
+                              "Редактировать файл domains": lambda: _ps_edit_domains(),
                               "Проверить IP через Psiphon": _ps_check_ip,
                           })
         elif choice == 6:
@@ -295,13 +300,17 @@ def run_menu() -> None:
                 from vwn.modules.tor import upgrade as _up
                 _up()
                 console.print("  [bright_green]Tor обновлён[/]")
+            def _tor_edit_domains() -> None:
+                from vwn.modules.tor import DOMAINS_FILE, _apply_domains
+                if edit_list_in_editor(DOMAINS_FILE):
+                    _apply_domains()
+
             manage_tunnel("Tor", "tor.service", "tor", has_install=True,
                           extra={
                               "Сменить страну": _tor_change_country,
                               "Добавить домен": lambda: add_domain_flow("tor"),
                               "Удалить домен": lambda: remove_domain_flow("tor"),
-                              "Редактировать файл domains": lambda: edit_list_in_editor(
-                                  os.path.join(config.XRAY_DIR, "tor_domains.txt")),
+                              "Редактировать файл domains": _tor_edit_domains,
                               "Проверить IP через Tor": _tor_check_ip,
                               "Обновить цепь (новый IP)": _tor_renew,
                               "Управление мостами": _tor_bridges,
@@ -360,12 +369,16 @@ def run_menu() -> None:
                     if r.returncode != 0:
                         err = r.stderr.strip()[:200] if r.stderr.strip() else f"curl exit {r.returncode}"
                         console.print(f"  [red]Ошибка: {err}[/]")
+            def _rl_edit_domains() -> None:
+                from vwn.modules._domains import _file, _apply
+                if edit_list_in_editor(_file("relay")):
+                    _apply("relay")
+
             manage_tunnel("Relay", "", "relay", has_configure=True,
                           extra={
                               "Добавить домен": lambda: add_domain_flow("relay"),
                               "Удалить домен": lambda: remove_domain_flow("relay"),
-                              "Редактировать файл domains": lambda: edit_list_in_editor(
-                                  os.path.join(config.XRAY_DIR, "relay_domains.txt")),
+                              "Редактировать файл domains": _rl_edit_domains,
                               "Проверить IP через Relay": _rl_check_ip,
                           })
         elif choice == 8:

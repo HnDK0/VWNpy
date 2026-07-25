@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from vwn.core import config, shell
 from vwn.core.color import console
@@ -168,11 +169,11 @@ def restart_xray_services() -> None:
     run_cmd("systemctl restart xray-reality xray-ws xray-xhttp")
 
 
-def edit_list_in_editor(file_path: str) -> None:
-    """Открыть файл списока в $EDITOR (nano по умолчанию) для редактирования."""
+def edit_list_in_editor(file_path: str) -> bool:
+    """Открыть файл списка в $EDITOR. Возвращает True если файл был изменён."""
     if not os.path.isfile(file_path):
-        console.print(f"  [yellow]Файл не найден: {file_path}[/]")
-        return
+        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(file_path).write_text("")
     editor = os.environ.get("EDITOR") or "nano"
     tmp_path = None
     try:
@@ -184,10 +185,12 @@ def edit_list_in_editor(file_path: str) -> None:
         console.print(f"  Открываю {editor}...")
         result = subprocess.run([editor, tmp_path])
         if result.returncode == 0:
+            new_content = Path(tmp_path).read_text()
             shutil.move(tmp_path, file_path)
             tmp_path = None
-        else:
-            console.print("  [yellow]Редактирование отменено[/]")
+            return new_content != content
+        console.print("  [yellow]Редактирование отменено[/]")
+        return False
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
