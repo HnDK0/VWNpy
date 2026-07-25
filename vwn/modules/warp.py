@@ -297,10 +297,21 @@ def _kernel_module_available() -> bool:
     r = shell.run(["lsmod"], capture=True, check=False)
     if r.returncode == 0 and "amneziawg" in (r.stdout or ""):
         return True
-    # Пробуем загрузить
     shell.run(["modprobe", "amneziawg"], check=False)
     r2 = shell.run(["lsmod"], capture=True, check=False)
-    return r2.returncode == 0 and "amneziawg" in (r2.stdout or "")
+    if r2.returncode == 0 and "amneziawg" in (r2.stdout or ""):
+        return True
+    # ponytail: modprobe может не найти модуль в depmod-базе, но .ko есть.
+    kver = _get_running_kernel()
+    for pattern in (f"/lib/modules/{kver}/updates/dkms/amneziawg.ko",
+                    f"/lib/modules/{kver}/extra/amneziawg.ko"):
+        hits = glob.glob(pattern)
+        if hits:
+            shell.run(["insmod", hits[0]], check=False)
+            r3 = shell.run(["lsmod"], capture=True, check=False)
+            if r3.returncode == 0 and "amneziawg" in (r3.stdout or ""):
+                return True
+    return False
 
 
 def _add_ppa_and_install(packages: list[str]) -> bool:
@@ -332,9 +343,11 @@ def _cleanup_stale_dkms() -> None:
         return
     for line in (r.stdout or "").splitlines():
         line = line.strip()
-        if not line or "/" not in line:
+        if not line:
             continue
-        m = re.match(r"(\S+)/(\S+).*:\s+(\S+)", line)
+        m = re.match(r"(\S+)/(\S+?)[,\s]+\s*(\S+?)[,\s]", line)
+        if not m:
+            m = re.match(r"(\S+?),\s+(\S+?)[,\s]+\s*(\S+?)[,\s]", line)
         if not m:
             continue
         mod_name, mod_ver, kver = m.group(1), m.group(2), m.group(3)
@@ -439,8 +452,10 @@ def _install_amneziawg() -> str:
     running = _ensure_kernel_env()
 
     print("  Устанавливаю AmneziaWG через PPA...")
-    if not _add_ppa_and_install(["amneziawg"]):
+    apt_ok = _add_ppa_and_install(["amneziawg"])
+    if not apt_ok:
         _cleanup_broken_dkms()
+        raise RuntimeError("Не удалось установить amneziawg из PPA")
 
     if _kernel_module_available():
         if not shutil.which("resolvconf"):
@@ -449,10 +464,10 @@ def _install_amneziawg() -> str:
         config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
         return MODE_KERNEL
 
-    # ponytail: apt install упал из-за DKMS autoinstall (stale kernels).
-    # Собираем модуль ТОЛЬКО для текущего ядра с --force, затем dpkg --configure -a.
+    # ponytail: apt install прошёл, DKMS собрал, но модуль не грузится.
+    # Пробуем dkms install --force для текущего ядра.
     r = shell.run(["dkms", "status"], capture=True, check=False)
-    m = re.search(r"amneziawg[/ ](\S+):", r.stdout or "")
+    m = re.search(r"amneziawg[/ ,](\S+?)[, ]", r.stdout or "")
     if m:
         ver = m.group(1)
         print(f"  DKMS: ручная сборка amneziawg/{ver} для {running}...")
@@ -467,11 +482,12 @@ def _install_amneziawg() -> str:
         config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
         return MODE_KERNEL
 
-    _cleanup_broken_dkms()
+    # ponytail: пакеты установлены, DKMS собрал, но модуль не грузится.
+    # НЕ пуржим — скорее всего нужен ребут.
     raise RuntimeError(
-        f"AmneziaWG kernel module не загружается. "
-        f"Проверьте: dkms status | grep amneziawg. "
-        f"Возможно нужен ребут. Используйте метод native."
+        f"AmneziaWG установлен, модуль собран для {running}, "
+        f"но не загружается. Попробуйте reboot, затем запустите снова. "
+        f"Или используйте метод native."
     )
 
 
