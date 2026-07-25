@@ -16,7 +16,8 @@ def run(cmd, *args, check: bool = True, capture: bool = False, **kw) -> subproce
     if args:
         cmd = list(cmd) + list(args)
     try:
-        r = subprocess.run(cmd, capture_output=capture, text=True, **kw)
+        use_capture = capture and "stdout" not in kw and "stderr" not in kw
+        r = subprocess.run(cmd, capture_output=use_capture, text=True, **kw)
         if r.returncode != 0 and capture:
             _err.print(f"{C['red']}stderr: {r.stderr[:500]}{C['reset']}")
         return r
