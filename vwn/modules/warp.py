@@ -9,6 +9,7 @@ AmneziaWG требует linux-headers для текущего ядра. Есл�
 недоступны — ошибка с рекомендацией использовать native.
 """
 
+import glob
 import json
 import os
 import re
@@ -324,6 +325,61 @@ def _cleanup_broken_dkms() -> None:
     shell.run(["apt-get", "-f", "install", "-y"], check=False, timeout=30)
 
 
+def _cleanup_stale_dkms() -> None:
+    """Удалить DKMS-записи для ядер, у которых нет /lib/modules/<kver>/build."""
+    r = shell.run(["dkms", "status"], capture=True, check=False)
+    if r.returncode != 0:
+        return
+    for line in (r.stdout or "").splitlines():
+        line = line.strip()
+        if not line or "/" not in line:
+            continue
+        m = re.match(r"(\S+)/(\S+).*:\s+(\S+)", line)
+        if not m:
+            continue
+        mod_name, mod_ver, kver = m.group(1), m.group(2), m.group(3)
+        if not glob.glob(f"/lib/modules/{kver}/build"):
+            shell.run(["dkms", "remove", "-m", mod_name, "-v", mod_ver,
+                        "-k", kver], check=False, timeout=15)
+
+
+def _ensure_debsrc() -> None:
+    """Убедиться что deb-src репозитории включены (нужно для DKMS source tree)."""
+    codename = (shell.run(["lsb_release", "-cs"], capture=True,
+                           check=False).stdout or "").strip()
+    if not codename:
+        return
+    sources = Path("/etc/apt/sources.list")
+    if sources.exists():
+        text = sources.read_text(errors="ignore")
+        if "deb-src" in text and codename in text:
+            return
+    for d in [Path("/etc/apt/sources.list.d")]:
+        for f in d.glob("*.sources"):
+            text = f.read_text(errors="ignore")
+            if "deb-src" in text and codename in text:
+                return
+        for f in d.glob("*.list"):
+            text = f.read_text(errors="ignore")
+            if "deb-src" in text and codename in text:
+                return
+    line = (f"deb-src http://archive.ubuntu.com/ubuntu/ {codename} main restricted "
+            f"universe multiverse\n")
+    try:
+        with open("/etc/apt/sources.list", "a") as f:
+            f.write(line)
+    except OSError:
+        pass
+
+
+def _ensure_build_prereqs() -> None:
+    """Установить build-essential, dkms, headers для текущего ядра."""
+    _ensure_debsrc()
+    shell.run(["apt-get", "update"], timeout=60, check=False)
+    shell.run(["apt-get", "install", "-y", "build-essential", "dkms"],
+              timeout=120, check=False)
+
+
 def _remove_old_kernel_headers(running: str) -> None:
     """Удалить headers старых ядер чтобы DKMS не пытался для них собирать."""
     r = shell.run(["dpkg", "-l"], capture=True, check=False)
@@ -350,6 +406,7 @@ def _ensure_kernel_env() -> str:
     _cleanup_broken_dkms()
     running = _get_running_kernel()
     _remove_old_kernel_headers(running)
+    _cleanup_stale_dkms()
     check = shell.run(["dpkg", "-s", f"linux-headers-{running}"],
                       check=False, capture=True)
     if check.returncode == 0 and "Status: install ok installed" in (check.stdout or ""):
@@ -366,16 +423,6 @@ def _ensure_kernel_env() -> str:
     )
 
 
-def _dkms_build_for_running(version: str, running: str) -> bool:
-    """Ручная сборка DKMS для конкретного ядра."""
-    print(f"  DKMS: собираю модуль для {running}...")
-    shell.run(["dkms", "build", "-m", "amneziawg", "-v", version,
-                "-k", running], timeout=120, check=False)
-    shell.run(["dkms", "install", "-m", "amneziawg", "-v", version,
-                "-k", running], timeout=60, check=False)
-    return _kernel_module_available()
-
-
 def _install_amneziawg() -> str:
     """Установить AmneziaWG (kernel mode). Вернёт MODE_KERNEL."""
     if _kernel_module_available():
@@ -388,12 +435,12 @@ def _install_amneziawg() -> str:
         config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
         return MODE_KERNEL
 
+    _ensure_build_prereqs()
     running = _ensure_kernel_env()
 
     print("  Устанавливаю AmneziaWG через PPA...")
     if not _add_ppa_and_install(["amneziawg"]):
         _cleanup_broken_dkms()
-        raise RuntimeError("Не удалось установить amneziawg из PPA")
 
     if _kernel_module_available():
         if not shutil.which("resolvconf"):
@@ -402,21 +449,29 @@ def _install_amneziawg() -> str:
         config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
         return MODE_KERNEL
 
+    # ponytail: apt install упал из-за DKMS autoinstall (stale kernels).
+    # Собираем модуль ТОЛЬКО для текущего ядра с --force, затем dpkg --configure -a.
     r = shell.run(["dkms", "status"], capture=True, check=False)
     m = re.search(r"amneziawg[/ ](\S+):", r.stdout or "")
     if m:
-        if _dkms_build_for_running(m.group(1), running):
-            if not shutil.which("resolvconf"):
-                shell.run(["apt-get", "install", "-y", "openresolv"],
-                          timeout=60, check=False)
-            config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
-            return MODE_KERNEL
+        ver = m.group(1)
+        print(f"  DKMS: ручная сборка amneziawg/{ver} для {running}...")
+        shell.run(["dkms", "install", "-m", "amneziawg", "-v", ver,
+                    "-k", running, "--force"], timeout=120, check=False)
+        shell.run(["dpkg", "--configure", "-a"], check=False, timeout=60)
+
+    if _kernel_module_available():
+        if not shutil.which("resolvconf"):
+            shell.run(["apt-get", "install", "-y", "openresolv"],
+                      timeout=60, check=False)
+        config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
+        return MODE_KERNEL
 
     _cleanup_broken_dkms()
     raise RuntimeError(
         f"AmneziaWG kernel module не загружается. "
         f"Проверьте: dkms status | grep amneziawg. "
-        f"Возможно нужен ребут."
+        f"Возможно нужен ребут. Используйте метод native."
     )
 
 
