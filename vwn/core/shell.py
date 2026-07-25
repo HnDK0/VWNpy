@@ -28,6 +28,10 @@ def run(cmd, *args, check: bool = True, capture: bool = False, **kw) -> subproce
         if check:
             raise
         return subprocess.CompletedProcess(cmd, 127, "", str(exc))
+    except subprocess.TimeoutExpired as exc:
+        if check:
+            raise
+        return subprocess.CompletedProcess(cmd, -1, exc.stdout or "", exc.stderr or "")
 
 
 def systemctl(action: str, service: str) -> bool:

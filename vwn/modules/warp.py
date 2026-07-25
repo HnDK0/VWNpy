@@ -1,15 +1,12 @@
-"""WARP tunnel — 3 метода: native (wgcf→Xray WG), amnezia (kernel/userspace), warp-svc.
+"""WARP tunnel — 3 метода: native (wgcf→Xray WG), amnezia (kernel only), warp-svc.
 
 Каждый метод получает уникальный тег outbound в конфиге Xray:
   native   → "warp-native"
   amnezia  → "warp-amnezia"
   warp-svc → "warp-svc"
 
-Режимы AmneziaWG:
-  "kernel"    — amneziawg kernel module + awg-quick (netlink, есть обфускация)
-  "userspace" — wireguard-go + wg-quick (UAPI, без обфускации)
-
-Приоритет: kernel > PPA + ребут > userspace fallback.
+AmneziaWG требует linux-headers для текущего ядра. Если headers
+недоступны — ошибка с рекомендацией использовать native.
 """
 
 import json
@@ -35,7 +32,6 @@ AWG_SERVICE_FILE = f"/etc/systemd/system/{AWG_SERVICE}.service"
 AWG_GO_BIN = "/usr/local/bin/amneziawg-go"
 AWG_QUICK_BIN = "/usr/local/bin/awg-quick"
 
-WIREGUARD_GO_BIN = "/usr/local/bin/wireguard-go"
 WG_QUICK_BIN = "/usr/bin/wg-quick"
 
 WARP_TAG = "warp"
@@ -47,10 +43,8 @@ WARP_TAGS = {
 SOCKS_TAG = "socks-warp"
 
 AWG_GO_URL = "https://github.com/HnDK0/amneziawg-go-build/releases/latest/download/amneziawg-go-{arch}"
-WG_GO_URL = "https://github.com/P3TERX/wireguard-go-builder/releases/download/0.0.20230223/wireguard-go-linux-{arch}.tar.gz"
 
 MODE_KERNEL = "kernel"
-MODE_USERSPACE = "userspace"
 
 
 def _tag_for_method(method: str) -> str:
@@ -318,60 +312,113 @@ def _add_ppa_and_install(packages: list[str]) -> bool:
     return r.returncode == 0
 
 
+def _get_running_kernel() -> str:
+    r = shell.run(["uname", "-r"], capture=True, check=True)
+    return (r.stdout or "").strip()
+
+
+def _cleanup_broken_dkms() -> None:
+    """Очистить сломанное dpkg-состояние amneziawg."""
+    shell.run(["dpkg", "--purge", "--force-remove-reinstreq",
+               "amneziawg", "amneziawg-dkms"], check=False, timeout=30)
+    shell.run(["apt-get", "-f", "install", "-y"], check=False, timeout=30)
+
+
+def _remove_old_kernel_headers(running: str) -> None:
+    """Удалить headers старых ядер чтобы DKMS не пытался для них собирать."""
+    r = shell.run(["dpkg", "-l"], capture=True, check=False)
+    if r.returncode != 0:
+        return
+    pkgs = []
+    base = running.rsplit("-", 1)[0] if "-" in running else running
+    for line in (r.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        name = parts[1]
+        if name.startswith(f"linux-headers-{base}"):
+            continue
+        if name.startswith("linux-headers-"):
+            pkgs.append(name)
+    if pkgs:
+        print(f"  Удаляю headers старых ядер: {', '.join(pkgs)}...")
+        shell.run(["apt-get", "remove", "-y"] + pkgs, timeout=60, check=False)
+
+
+def _ensure_kernel_env() -> str:
+    """Подготовить окружение: почистить dpkg, убрать старые headers, поставить текущие."""
+    _cleanup_broken_dkms()
+    running = _get_running_kernel()
+    _remove_old_kernel_headers(running)
+    check = shell.run(["dpkg", "-s", f"linux-headers-{running}"],
+                      check=False, capture=True)
+    if check.returncode == 0 and "Status: install ok installed" in (check.stdout or ""):
+        return running
+    print(f"  Устанавливаю linux-headers-{running}...")
+    inst = shell.run(["apt-get", "install", "-y", f"linux-headers-{running}"],
+                     timeout=120, check=False)
+    if inst.returncode == 0:
+        return running
+    raise RuntimeError(
+        f"linux-headers-{running} недоступны. "
+        f"AmneziaWG требует headers для текущего ядра. "
+        f"Установите вручную или используйте метод native."
+    )
+
+
+def _dkms_build_for_running(version: str, running: str) -> bool:
+    """Ручная сборка DKMS для конкретного ядра."""
+    print(f"  DKMS: собираю модуль для {running}...")
+    shell.run(["dkms", "build", "-m", "amneziawg", "-v", version,
+                "-k", running], timeout=120, check=False)
+    shell.run(["dkms", "install", "-m", "amneziawg", "-v", version,
+                "-k", running], timeout=60, check=False)
+    return _kernel_module_available()
+
+
 def _install_amneziawg() -> str:
-    """Установить AmneziaWG. Вернёт MODE_KERNEL или MODE_USERSPACE."""
+    """Установить AmneziaWG (kernel mode). Вернёт MODE_KERNEL."""
     if _kernel_module_available():
         if not shutil.which("awg-quick") or not shutil.which("awg"):
             shell.run(["apt-get", "install", "-y", "amneziawg-tools"],
                       timeout=60, check=False)
         if not shutil.which("resolvconf"):
             shell.run(["apt-get", "install", "-y", "openresolv"],
-                      timeout=30, check=False)
+                      timeout=60, check=False)
         config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
         return MODE_KERNEL
 
-    print("  Installing AmneziaWG kernel module via PPA...")
-    if _add_ppa_and_install(["amneziawg"]):
-        if _kernel_module_available():
+    running = _ensure_kernel_env()
+
+    print("  Устанавливаю AmneziaWG через PPA...")
+    if not _add_ppa_and_install(["amneziawg"]):
+        _cleanup_broken_dkms()
+        raise RuntimeError("Не удалось установить amneziawg из PPA")
+
+    if _kernel_module_available():
+        if not shutil.which("resolvconf"):
+            shell.run(["apt-get", "install", "-y", "openresolv"],
+                      timeout=60, check=False)
+        config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
+        return MODE_KERNEL
+
+    r = shell.run(["dkms", "status"], capture=True, check=False)
+    m = re.search(r"amneziawg[/ ](\S+):", r.stdout or "")
+    if m:
+        if _dkms_build_for_running(m.group(1), running):
             if not shutil.which("resolvconf"):
                 shell.run(["apt-get", "install", "-y", "openresolv"],
-                          timeout=30, check=False)
-            config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
-            return MODE_KERNEL
-        # Модуль собран (dkms) но не загрузился — другое ядро
-        r = shell.run(["dkms", "status"], capture=True, check=False)
-        if r.returncode == 0 and "amneziawg" in (r.stdout or ""):
-            print("  AmneziaWG module built for different kernel.")
-            print("  Reboot required to activate it.")
+                          timeout=60, check=False)
             config.vwn_conf_set("AWG_MODE", MODE_KERNEL)
             return MODE_KERNEL
 
-    # Fallback: userspace
-    print("  Kernel module not available — falling back to userspace WireGuard.")
-    print("  Note: AmneziaWG obfuscation not available in this mode.")
-    shell.run(["apt-get", "install", "-y", "wireguard-tools"], timeout=60, check=False)
-    if not shutil.which("resolvconf"):
-        shell.run(["apt-get", "install", "-y", "openresolv"], timeout=30, check=False)
-    _download_wireguard_go()
+    _cleanup_broken_dkms()
+    raise RuntimeError(
+        f"AmneziaWG kernel module не загружается. "
+        f"Проверьте: dkms status | grep amneziawg. "
+        f"Возможно нужен ребут."
+    )
 
-    if shutil.which("wg-quick") and os.path.exists(WIREGUARD_GO_BIN):
-        config.vwn_conf_set("AWG_MODE", MODE_USERSPACE)
-        return MODE_USERSPACE
-    raise RuntimeError("Failed to install any WireGuard implementation")
-
-
-def _download_wireguard_go() -> None:
-    if os.path.exists(WIREGUARD_GO_BIN):
-        return
-    arch = (shell.run(["uname", "-m"], capture=True).stdout or "").strip()
-    mapped = {"x86_64": "amd64", "aarch64": "arm64"}.get(arch, "amd64")
-    url = WG_GO_URL.format(arch=mapped)
-    tmp = "/tmp/wg-go.tar.gz"
-    shell.run(["curl", "-fL", "-o", tmp, url], timeout=60)
-    shell.run(["tar", "xzf", tmp, "-C", "/usr/local/bin", "wireguard-go"], check=False)
-    if os.path.exists(f"/usr/local/bin/wireguard-go"):
-        os.chmod(WIREGUARD_GO_BIN, 0o755)
-    Path(tmp).unlink(missing_ok=True)
 
 
 # ponytail: I1/I2 генерики для AmneziaWG init пакетов — если реальный
@@ -416,9 +463,8 @@ PersistentKeepalive = 25
     os.chmod(AWG_CONF, 0o600)
 
 
-def _create_awg_systemd(mode: str = MODE_KERNEL) -> None:
-    if mode == MODE_KERNEL:
-        unit = f"""[Unit]
+def _create_awg_systemd() -> None:
+    unit = f"""[Unit]
 Description=AmneziaWG WARP tunnel (warp0)
 After=network-online.target
 Wants=network-online.target
@@ -428,23 +474,6 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart={AWG_QUICK_BIN} up {AWG_CONF}
 ExecStop={AWG_QUICK_BIN} down {AWG_CONF}
-
-[Install]
-WantedBy=multi-user.target
-"""
-    else:
-        unit = f"""[Unit]
-Description=WARP tunnel (warp0) [userspace]
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-Environment=WG_QUICK_USERSPACE_IMPLEMENTATION={WIREGUARD_GO_BIN}
-Environment=WG_SUDO=1
-ExecStart={WG_QUICK_BIN} up {AWG_CONF}
-ExecStop={WG_QUICK_BIN} down {AWG_CONF}
 
 [Install]
 WantedBy=multi-user.target
@@ -495,10 +524,9 @@ def install_amnezia() -> None:
     print(f"  {endpoint}")
     print("  AmneziaWG...")
     mode = _install_amneziawg()
-    label = "kernel module" if mode == MODE_KERNEL else "userspace (wg-quick + wireguard-go)"
-    print(f"  Mode: {label}")
+    print(f"  Mode: kernel module")
     _build_awg_conf(keys["WARP_PRIVATE_KEY"], keys["WARP_IPV4"], endpoint, mode)
-    _create_awg_systemd(mode)
+    _create_awg_systemd()
     print("  Starting amnezia-warp...")
     r = shell.run(["systemctl", "enable", "--now", AWG_SERVICE], check=False, timeout=30)
     time.sleep(5)
@@ -523,7 +551,7 @@ def remove_amnezia() -> None:
     for f in (AWG_SERVICE_FILE, AWG_CONF):
         if os.path.exists(f):
             os.remove(f)
-    for b in (AWG_GO_BIN, WIREGUARD_GO_BIN):
+    for b in (AWG_GO_BIN, "/usr/local/bin/wireguard-go"):
         if os.path.exists(b):
             os.remove(b)
     shell.run(["systemctl", "daemon-reload"], check=False)
