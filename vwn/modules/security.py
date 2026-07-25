@@ -84,7 +84,7 @@ def fail2ban_stop() -> None:
 # ── UFW ────────────────────────────────────────────────────────────
 
 def ufw_installed() -> bool:
-    return shell.run(["which", "ufw"], check=False).returncode == 0
+    return shell.run(["which", "ufw"], capture=True, check=False).returncode == 0
 
 
 def ufw_status() -> dict:
@@ -330,8 +330,9 @@ def webjail_disable() -> None:
 def webjail_status() -> dict:
     if not shell.service_active("fail2ban"):
         return {"enabled": False, "banned": 0}
+    import subprocess as _sp
     r = shell.run(["fail2ban-client", "status", "nginx-probe"],
-                   capture=True, check=False)
+                   capture=True, check=False, stderr=_sp.DEVNULL)
     if r.returncode != 0:
         if os.path.isfile(_F2B_JAIL_LOCAL):
             with open(_F2B_JAIL_LOCAL) as f:
