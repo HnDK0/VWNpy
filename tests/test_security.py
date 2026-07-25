@@ -247,6 +247,39 @@ def test_webjail_status_active(monkeypatch):
     assert s["banned"] == 5
 
 
+def test_webjail_status_jail_not_exist(monkeypatch):
+    """Джейл не создан — должен вернуть enabled=False без краша."""
+    monkeypatch.setattr(security.shell, "service_active", lambda s: True)
+    from vwn.modules import privacy
+    monkeypatch.setattr(privacy, "status", lambda: {"enabled": False, "score": 0})
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = "Sorry but the jail 'nginx-probe' does not exist"
+    monkeypatch.setattr(security.shell, "run", lambda *a, **k: R())
+    assert security.webjail_status() == {"enabled": False, "banned": 0}
+
+
+def test_webjail_status_privacy_enabled(monkeypatch):
+    """Privacy mode включён — WebJail не запрашивается."""
+    monkeypatch.setattr(security.shell, "service_active", lambda s: True)
+    from vwn.modules import privacy
+    monkeypatch.setattr(privacy, "status", lambda: {"enabled": True, "score": 4})
+    called = []
+    monkeypatch.setattr(security.shell, "run", lambda *a, **k: called.append(1) or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    assert security.webjail_status() == {"enabled": False, "banned": 0}
+    assert not called, "fail2ban-client не должен вызываться при privacy mode"
+
+
+def test_webjail_enable_privacy_raises(monkeypatch):
+    """Включить WebJail при privacy mode — RuntimeError."""
+    from vwn.modules import privacy
+    monkeypatch.setattr(privacy, "status", lambda: {"enabled": True, "score": 4})
+    import pytest
+    with pytest.raises(RuntimeError, match="Privacy"):
+        security.webjail_enable()
+
+
 # ── IPv6 ────────────────────────────────────────────────────────────
 
 def test_ipv6_status(monkeypatch):

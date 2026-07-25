@@ -294,6 +294,9 @@ ignoreregex =
 
 def webjail_enable() -> None:
     """Включить nginx-probe jail (fail2ban filter для сканеров)."""
+    from vwn.modules import privacy
+    if privacy.status()["enabled"]:
+        raise RuntimeError("Privacy mode включён — логи отключены, WebJail бессмысленен")
     import glob as _glob
     if not shell.service_active("fail2ban"):
         fail2ban_install()
@@ -330,14 +333,13 @@ def webjail_disable() -> None:
 def webjail_status() -> dict:
     if not shell.service_active("fail2ban"):
         return {"enabled": False, "banned": 0}
+    from vwn.modules import privacy
+    if privacy.status()["enabled"]:
+        return {"enabled": False, "banned": 0}
     import subprocess as _sp
     r = shell.run(["fail2ban-client", "status", "nginx-probe"],
                    capture=True, check=False, stderr=_sp.DEVNULL)
     if r.returncode != 0:
-        if os.path.isfile(_F2B_JAIL_LOCAL):
-            with open(_F2B_JAIL_LOCAL) as f:
-                if "[nginx-probe]" in f.read():
-                    webjail_disable()
         return {"enabled": False, "banned": 0}
     m = re.search(r"Currently banned:\s*(\d+)", r.stdout or "")
     banned = int(m.group(1)) if m else 0

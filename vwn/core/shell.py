@@ -16,9 +16,12 @@ def run(cmd, *args, check: bool = True, capture: bool = False, **kw) -> subproce
     if args:
         cmd = list(cmd) + list(args)
     try:
-        use_capture = capture and "stdout" not in kw and "stderr" not in kw
-        r = subprocess.run(cmd, capture_output=use_capture, text=True, **kw)
-        if r.returncode != 0 and capture:
+        if capture and "stdout" not in kw:
+            kw["stdout"] = subprocess.PIPE
+        if capture and "stderr" not in kw:
+            kw["stderr"] = subprocess.PIPE
+        r = subprocess.run(cmd, text=True, **kw)
+        if r.returncode != 0 and capture and r.stderr:
             _err.print(f"{C['red']}stderr: {r.stderr[:500]}{C['reset']}")
         return r
     except FileNotFoundError as exc:

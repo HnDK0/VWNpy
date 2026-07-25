@@ -1,5 +1,6 @@
 """Privacy mode: disable logging across Xray, Nginx, journald, tmpfs."""
 
+import logging
 import os
 import re
 import time
@@ -155,6 +156,11 @@ def enable() -> None:
         return
     _xray_disable_log()
     _nginx_set_access_log("off")
+    try:
+        from vwn.modules.security import webjail_disable
+        webjail_disable()
+    except Exception as exc:
+        logging.debug("webjail_disable during privacy enable failed: %s", exc)
     for svc in ["xray-reality"]:
         _systemd_output(svc, "disable")
     shell.run(["systemctl", "daemon-reload"], check=False)
