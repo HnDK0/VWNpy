@@ -39,7 +39,7 @@ def security_menu() -> None:
         console.print("  3. Установить и запустить Fail2Ban")
         console.print("  4. Остановить Fail2Ban")
         console.print("  5. Удалить Fail2Ban")
-        console.print("  6. Статус UFW")
+        console.print("  6. Открытые порты UFW")
         console.print("  7. Разрешить порт UFW")
         console.print("  8. Заблокировать порт UFW")
         console.print("  9. Включить WebJail (nginx-probe)")

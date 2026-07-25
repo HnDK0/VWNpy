@@ -117,8 +117,11 @@ def manage_cdn() -> None:
             ip = s["ip"]
             if ip:
                 run_task("Чёрный список", lambda: blacklist_add(ip))
-                run_task("Поиск следующего", lambda: apply_ip(find_best(
-                    config.vwn_conf_get("CDN_MODE", ""), ip) or ""))
+                best = find_best(config.vwn_conf_get("CDN_MODE", ""), ip)
+                if best:
+                    run_task("Применение нового IP", lambda: apply_ip(best))
+                else:
+                    console.print("  [yellow]Нет доступных IP для замены[/]")
         elif val == "10":
             bl = blacklist_list()
             if bl:

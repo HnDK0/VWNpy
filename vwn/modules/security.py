@@ -97,7 +97,7 @@ def ufw_status() -> dict:
     if r.returncode == 0:
         for line in (r.stdout or "").splitlines():
             line = line.strip()
-            if line and line[0].isdigit():
+            if line and (line[0].isdigit() or line[0] == "["):
                 rules.append(line)
     return {"active": is_active, "installed": True, "rules": rules}
 
@@ -333,6 +333,10 @@ def webjail_status() -> dict:
     r = shell.run(["fail2ban-client", "status", "nginx-probe"],
                    capture=True, check=False)
     if r.returncode != 0:
+        if os.path.isfile(_F2B_JAIL_LOCAL):
+            with open(_F2B_JAIL_LOCAL) as f:
+                if "[nginx-probe]" in f.read():
+                    webjail_disable()
         return {"enabled": False, "banned": 0}
     m = re.search(r"Currently banned:\s*(\d+)", r.stdout or "")
     banned = int(m.group(1)) if m else 0

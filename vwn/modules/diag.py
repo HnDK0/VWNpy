@@ -272,13 +272,16 @@ def run_full_diag() -> None:
         pass
     try:
         r = subprocess.run(["free", "-m"], capture_output=True, text=True, timeout=3)
-        for l in r.stdout.splitlines():
-            if l.startswith("Mem:"):
-                parts = l.split()
-                console.print(f"  RAM: {parts[2]}MB / {parts[1]}MB used")
-                break
+        if r.returncode == 0:
+            for l in r.stdout.splitlines():
+                if l.startswith("Mem:"):
+                    parts = l.split()
+                    console.print(f"  RAM: {parts[2]}MB / {parts[1]}MB used")
+                    break
+        else:
+            console.print("  RAM: ?")
     except Exception:
-        pass
+        console.print("  RAM: ?")
     console.print()
 
     _diag_network()

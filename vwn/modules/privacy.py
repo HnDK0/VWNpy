@@ -39,10 +39,16 @@ def _xray_disable_log() -> None:
 
 def _xray_restore_log() -> None:
     for c in _xray_configs():
-        err = "/var/log/xray/error.log"
-        if "reality" in c:
-            err = "/var/log/xray/reality-error.log"
-        _set_xray_log_level(c, "none", "warning")
+        if not os.path.isfile(c):
+            continue
+        import json
+        with open(c) as f:
+            cfg = json.load(f)
+        cfg.setdefault("log", {})
+        cfg["log"].pop("access", None)
+        cfg["log"]["loglevel"] = "warning"
+        with open(c, "w") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 
 def _nginx_set_access_log(state: str) -> None:
