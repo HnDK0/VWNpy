@@ -237,28 +237,52 @@ def change_ssh_port(new_port: int) -> None:
     with open(path, "w") as f:
         f.write(new_content)
 
+    # ponytail: ssh.socket (Ubuntu 22.10+/Debian 12+) игнорирует Port в sshd_config
+    socket_was_active = shell.service_active("ssh.socket")
+    if socket_was_active:
+        shell.run(["systemctl", "disable", "--now", "ssh.socket"], check=False)
+        shell.run(["systemctl", "daemon-reload"], check=False)
+
+    # валидация конфига перед рестартом
+    v = shell.run(["sshd", "-t"], capture=True, check=False)
+    if v.returncode != 0:
+        with open(path, "w") as f:
+            f.write(old_content)
+        if socket_was_active:
+            shell.run(["systemctl", "enable", "--now", "ssh.socket"], check=False)
+            shell.run(["systemctl", "daemon-reload"], check=False)
+        raise RuntimeError(f"sshd -t failed: {v.stderr.strip()}")
+
+    def _rollback(svc: str) -> None:
+        with open(path, "w") as f:
+            f.write(old_content)
+        shell.run(["systemctl", "restart", svc], check=False)
+        ufw_deny(new_port, "tcp")
+        if socket_was_active:
+            shell.run(["systemctl", "enable", "--now", "ssh.socket"], check=False)
+            shell.run(["systemctl", "daemon-reload"], check=False)
+
     # restart и проверка
     for svc in ("sshd", "ssh"):
         if shell.run(["systemctl", "restart", svc], check=False).returncode == 0:
             time.sleep(2)
             if shell.service_active(svc):
-                # проверить что слушает на новом порту
-                if _port_in_use(new_port) and not _port_in_use(old_port):
+                # проверить что sshd реально слушает на новом порту через sshd -T
+                eff = shell.run(["sshd", "-T"], capture=True, check=False)
+                eff_ports = set()
+                if eff.returncode == 0:
+                    for ln in (eff.stdout or "").splitlines():
+                        if ln.lower().startswith("port "):
+                            eff_ports.add(ln.split()[1])
+                if str(new_port) in eff_ports and str(old_port) not in eff_ports:
                     # убрать старый порт из UFW если он был 22
                     if old_port == 22:
                         ufw_deny(old_port, "tcp")
                     return
-                # rollback
-                with open(path, "w") as f:
-                    f.write(old_content)
-                shell.run(["systemctl", "restart", svc], check=False)
+                _rollback(svc)
                 raise RuntimeError(
                     f"SSHd started but not listening on {new_port}, rolled back to {old_port}")
-            # rollback
-            with open(path, "w") as f:
-                f.write(old_content)
-            shell.run(["systemctl", "restart", svc], check=False)
-            ufw_deny(new_port, "tcp")
+            _rollback(svc)
             raise RuntimeError(
                 f"SSHd failed to start on {new_port}, rolled back to {old_port}")
 
