@@ -294,8 +294,11 @@ ignoreregex =
 
 def webjail_enable() -> None:
     """Включить nginx-probe jail (fail2ban filter для сканеров)."""
+    import glob as _glob
     if not shell.service_active("fail2ban"):
         fail2ban_install()
+    if not _glob.glob("/var/log/nginx/access.log*"):
+        raise RuntimeError("nginx access log не найден — WebJail не запустится")
     os.makedirs(os.path.dirname(_WEBJAIL_FILTER), exist_ok=True)
     with open(_WEBJAIL_FILTER, "w") as f:
         f.write(_WEBJAIL_FILTER_CONF)

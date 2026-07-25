@@ -95,14 +95,12 @@ def run_menu() -> None:
             "CDN",
             "Бэкап / Восстановление",
             "Пересобрать все конфиги",
-            "Обновить VWNpy",
-            "Обновить Xray-core",
             "Перезапустить все сервисы",
             "Полное удаление",
-            "Выход",
         ]
-        for i, item in enumerate(items):
-            console.print(f"  {i+1}. {item}")
+        for i, item in enumerate(items, 1):
+            console.print(f"  {i}. {item}")
+        console.print("  0. Выход")
         try:
             choice = int(input("> ").strip())
         except (ValueError, EOFError):
@@ -358,15 +356,10 @@ def run_menu() -> None:
         elif choice == 14:
             _rebuild_configs()
         elif choice == 15:
-            _update_vwn()
-        elif choice == 16:
-            from vwn.core.system import install_xray
-            run_task("Обновление Xray-core", install_xray)
-        elif choice == 17:
             for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
                 run_cmd(f"systemctl restart {svc}")
             wait_key()
-        elif choice == 18:
+        elif choice == 16:
             full_remove()
-        elif choice == 19:
+        elif choice == 0:
             break
