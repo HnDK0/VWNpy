@@ -13,8 +13,8 @@ bash <(curl -sL https://github.com/HnDK0/VWNpy/raw/main/install.sh) --domain you
 Или локально из репозитория:
 
 ```bash
-git clone https://github.com/HnDK0/VWNpy/VWNpy.git && cd VWNpy
-sudo bash install.sh --domain your.domain --cert standalone --bbr --fail2ban
+git clone https://github.com/HnDK0/VWNpy.git && cd VWNpy
+sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2ban
 ```
 
 После установки сервисы запускаются автоматически. Подписка доступна по `https://your.domain/sub/<label>_<token>.txt`.
@@ -35,6 +35,12 @@ sudo bash install.sh --domain your.domain --cert standalone --bbr --fail2ban
             ├─ /v2/api/ws/*  → xray-ws :50001
             └─ /v2/api/xh/*  → xray-xhttp :50002
 ```
+
+## Системные требования
+
+- Debian 12+ или Ubuntu 22.04 / 24.04
+- Root-доступ
+- Python 3 — устанавливается автоматически
 
 ## Аргументы установки
 

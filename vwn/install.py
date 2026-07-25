@@ -133,7 +133,7 @@ def run_install(argv: "list | None" = None) -> None:
     shell.run_task("Swap при нехватке RAM", system.setup_swap)
 
     for pkg in ("curl", "jq", "socat", "qrencode", "python3", "unzip",
-                "openssl", "e2fsprogs", "netcat-openbsd",
+                "openssl", "e2fsprogs", "netcat-openbsd", "cron",
                 "gnupg2", "lsb-release", "software-properties-common",
                 "mmdb-bin"):
         shell.run_task(f"Установка {pkg}", lambda p=pkg: system.install_package(p))

@@ -35,9 +35,12 @@ EOF
 [[ "$#" -eq 0 || "$1" == "--help" || "$1" == "-h" ]] && usage
 
 # 1. python3 + pip
+if ! command -v python3 &>/dev/null || ! command -v pip3 &>/dev/null; then
+  apt-get update -qq
+fi
 if ! command -v python3 &>/dev/null; then
   echo ">>> Установка python3..."
-  apt-get update -qq && apt-get install -y -qq python3 python3-pip
+  apt-get install -y -qq python3 python3-pip
 fi
 if ! command -v pip3 &>/dev/null; then
   echo ">>> Установка pip3..."
@@ -70,5 +73,5 @@ else
   rm -rf "$TMPDIR"
 fi
 
-# 3. Запуск установки
+# 4. Запуск установки
 exec python3 -m vwn install "$@"
