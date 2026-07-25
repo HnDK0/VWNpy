@@ -138,7 +138,6 @@ def test_reapply_routing_global(monkeypatch, tmp_path):
     from vwn.modules import _domains
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(relay, "CONFIG", str(tmp_path / "relay.json"))
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
     vc.vwn_conf_set("RELAY_TUNNEL_MODE", "Global")
@@ -169,7 +168,6 @@ def test_reapply_routing_split(monkeypatch, tmp_path):
     from vwn.modules import _domains
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(relay, "CONFIG", str(tmp_path / "relay.json"))
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
     vc.vwn_conf_set("RELAY_TUNNEL_MODE", "Split")

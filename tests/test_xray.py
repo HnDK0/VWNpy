@@ -11,7 +11,6 @@ from vwn.modules import xray, relay
 def paths(tmp_path, monkeypatch):
     xray_dir = tmp_path / "xray"
     monkeypatch.setattr(config, "XRAY_DIR", str(xray_dir))
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "NGINX_LOOPBACK_CONF", str(tmp_path / "xray_loopback.conf"))
     monkeypatch.setattr(config, "SYSTEMD_DIR", str(tmp_path / "systemd"))
     monkeypatch.setattr(config, "REALITY_PUBLIC_PORT", 443)

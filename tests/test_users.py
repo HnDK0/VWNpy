@@ -9,7 +9,6 @@ from vwn.modules import users, sub
 
 @pytest.fixture
 def conf(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "NGINX_CONF_DIR", str(tmp_path / "conf.d"))
     monkeypatch.setattr(config, "NGINX_LOOPBACK_PORT", 8443)
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
@@ -119,7 +118,7 @@ def test_get_country_flag_fallback_on_error(monkeypatch):
 # ── get_cached_flag ────────────────────────────────────────
 
 def test_get_cached_flag_no_ip(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "empty.conf"))
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     monkeypatch.setattr(users, "_VWN_FLAG_CACHE", None)
     flag = users.get_cached_flag()
     assert flag == "\U0001f310"
@@ -212,7 +211,6 @@ def test_get_config_name_ws(conf, monkeypatch):
 
 def test_get_config_name_reality(conf, monkeypatch):
     monkeypatch.setattr(users, "_VWN_FLAG_CACHE", "\U0001f310")
-    monkeypatch.setattr(config, "VWN_CONF", str(conf / "vwn.conf"))
     name = users.get_config_name("Reality", "test")
     assert "VL-Reality" in name
 
@@ -267,7 +265,7 @@ def test_init_users_file_idempotent(conf, tmp_path):
 
 def test_init_users_file_no_uuid(tmp_path, monkeypatch):
     monkeypatch.setattr(users, "USERS_FILE", str(tmp_path / "users.conf"))
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "empty.conf"))
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     users.init_users_file()
     assert not os.path.isfile(str(tmp_path / "users.conf"))
 
@@ -396,8 +394,6 @@ def test_add_user_unique_token(conf, tmp_path):
 def test_add_user_many(tmp_path, monkeypatch):
     monkeypatch.setattr(users, "USERS_FILE", str(tmp_path / "users.conf"))
     monkeypatch.setattr(users, "SUB_DIR", str(tmp_path / "sub"))
-    monkeypatch.setattr(sub, "SUB_DIR", str(tmp_path / "sub"))
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
     config.vwn_conf_set("DOMAIN", "x.com")
     config.vwn_conf_set("UUID", "u1")
@@ -559,7 +555,7 @@ def test_get_sub_url(conf, tmp_path):
 
 
 def test_get_sub_url_no_domain(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "empty.conf"))
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     url = users.get_sub_url("user1", "TOKEN1")
     assert url is None
 

@@ -9,7 +9,7 @@ from vwn.modules import sub
 
 @pytest.fixture
 def conf(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     monkeypatch.setattr(config, "NGINX_CONF_DIR", str(tmp_path / "conf.d"))
     monkeypatch.setattr(config, "NGINX_LOOPBACK_PORT", 8443)
     config.vwn_conf_set("DOMAIN", "vpn.example.com")

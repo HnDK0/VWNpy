@@ -265,7 +265,6 @@ def test_apply_domains_skips_global(monkeypatch, tmp_path):
 def test_reapply_routing_global(monkeypatch, tmp_path):
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(tor, "DOMAINS_FILE", str(tmp_path / "domains.txt"))
     vc.vwn_conf_set("TOR_TUNNEL_MODE", "Global")
 

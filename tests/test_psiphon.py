@@ -212,7 +212,6 @@ def test_reapply_routing_global(monkeypatch, tmp_path):
     from vwn.modules import _domains
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
     vc.vwn_conf_set("PSIPHON_TUNNEL_MODE", "Global")
 
@@ -237,7 +236,6 @@ def test_reapply_routing_split(monkeypatch, tmp_path):
     from vwn.modules import _domains
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
     vc.vwn_conf_set("PSIPHON_TUNNEL_MODE", "Split")
 
@@ -263,9 +261,8 @@ def test_reapply_routing_split(monkeypatch, tmp_path):
 def test_reapply_routing_no_mode(monkeypatch, tmp_path):
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
-    monkeypatch.setattr(vc, "VWN_CONF", str(tmp_path / "vwn.conf"))
-    if os.path.isfile(str(tmp_path / "vwn.conf")):
-        os.remove(str(tmp_path / "vwn.conf"))
+    if os.path.isfile(vc.vwn_conf_path()):
+        os.remove(vc.vwn_conf_path())
 
     cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "psiphon"}]}
     p = tmp_path / "config.json"

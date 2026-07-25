@@ -288,7 +288,7 @@ def build_user_sub_file(
 
     connect_host = domain
     try:
-        ch = Path(config.CONNECT_HOST_FILE).read_text().strip()
+        ch = Path(config.connect_host_file_path()).read_text().strip()
         if ch:
             connect_host = ch
     except (OSError, ValueError):

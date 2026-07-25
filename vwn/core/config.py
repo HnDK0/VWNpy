@@ -6,7 +6,10 @@ import re
 
 XRAY_DIR = "/usr/local/etc/xray"
 XRAY_BIN = "/usr/local/bin/xray"
-VWN_CONF = os.path.join(XRAY_DIR, "vwn.conf")
+
+def vwn_conf_path() -> str:
+    return os.path.join(XRAY_DIR, "vwn.conf")
+
 VWN_LIB = "/usr/local/lib/vwn"
 CONFIG_DIR = os.path.join(VWN_LIB, "config")
 NGINX_CONF_DIR = "/etc/nginx/conf.d"
@@ -14,7 +17,9 @@ NGINX_LOOPBACK_CONF = os.path.join(NGINX_CONF_DIR, "xray.conf")
 NGINX_MAIN_CONF = "/etc/nginx/nginx.conf"
 SYSTEMD_DIR = "/etc/systemd/system"
 CERT_DIR = "/etc/nginx/cert"
-CONNECT_HOST_FILE = os.path.join(XRAY_DIR, "connect_host")
+
+def connect_host_file_path() -> str:
+    return os.path.join(XRAY_DIR, "connect_host")
 
 # Внутренние порты (loopback, в UFW не идут)
 NGINX_LOOPBACK_PORT = 8443
@@ -28,9 +33,9 @@ _B64_PREFIX = "@b64:"
 
 def vwn_conf_get(key: str) -> "str | None":
     """Прочитать значение из vwn.conf (с декодом @b64)."""
-    if not os.path.isfile(VWN_CONF):
+    if not os.path.isfile(vwn_conf_path()):
         return None
-    with open(VWN_CONF, encoding="utf-8") as fh:
+    with open(vwn_conf_path(), encoding="utf-8") as fh:
         for raw in fh:
             line = raw.rstrip("\n")
             if not line or line.startswith("#") or "=" not in line:
@@ -56,11 +61,11 @@ def vwn_conf_set(key: str, value: str) -> None:
     if re.search(r"[^a-zA-Z0-9_=.,:@%/\-]", value):
         safe = _B64_PREFIX + base64.b64encode(value.encode("utf-8")).decode("ascii")
 
-    os.makedirs(os.path.dirname(VWN_CONF), exist_ok=True)
+    os.makedirs(os.path.dirname(vwn_conf_path()), exist_ok=True)
     lines = []
     found = False
-    if os.path.isfile(VWN_CONF):
-        with open(VWN_CONF, encoding="utf-8") as fh:
+    if os.path.isfile(vwn_conf_path()):
+        with open(vwn_conf_path(), encoding="utf-8") as fh:
             for raw in fh:
                 line = raw.rstrip("\n")
                 if line.split("=", 1)[0] == key:
@@ -71,24 +76,24 @@ def vwn_conf_set(key: str, value: str) -> None:
     if not found:
         lines.append(f"{key}={safe}")
 
-    tmp = f"{VWN_CONF}.tmp"
+    tmp = f"{vwn_conf_path()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-    os.replace(tmp, VWN_CONF)
-    os.chmod(VWN_CONF, 0o600)
+    os.replace(tmp, vwn_conf_path())
+    os.chmod(vwn_conf_path(), 0o600)
 
 
 def vwn_conf_del(key: str) -> None:
     """Удалить ключ из vwn.conf."""
-    if not os.path.isfile(VWN_CONF):
+    if not os.path.isfile(vwn_conf_path()):
         return
     lines = []
-    with open(VWN_CONF, encoding="utf-8") as fh:
+    with open(vwn_conf_path(), encoding="utf-8") as fh:
         for raw in fh:
             if raw.rstrip("\n").split("=", 1)[0] == key:
                 continue
             lines.append(raw.rstrip("\n"))
-    tmp = f"{VWN_CONF}.tmp"
+    tmp = f"{vwn_conf_path()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
-    os.replace(tmp, VWN_CONF)
+    os.replace(tmp, vwn_conf_path())

@@ -86,7 +86,6 @@ def test_parse_xray_version():
 
 
 def test_config_crud(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     assert config.vwn_conf_get("DOMAIN") is None
     config.vwn_conf_set("DOMAIN", "vpn.example.com")
@@ -99,7 +98,6 @@ def test_config_crud(tmp_path, monkeypatch):
 
 
 def test_config_b64_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     # значение с спецсимволами кодируется в @b64
     config.vwn_conf_set("TOKEN", "ab@c/d e")
@@ -111,7 +109,6 @@ def test_config_b64_roundtrip(tmp_path, monkeypatch):
 
 def test_config_invalid_key(tmp_path, monkeypatch):
     import pytest
-    monkeypatch.setattr(config, "VWN_CONF", str(tmp_path / "vwn.conf"))
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     with pytest.raises(ValueError):
         config.vwn_conf_set("bad key", "x")

@@ -30,7 +30,10 @@ DOMAINS_FILE = os.path.join(XRAY_DIR, "cdn_domains.txt")
 IPS_FILE = os.path.join(XRAY_DIR, "cdn_ips.txt")
 FOUND_FILE = os.path.join(XRAY_DIR, "cdn_found.txt")
 ACTIVE_IP_FILE = os.path.join(XRAY_DIR, "cdn_active_ip")
-CONNECT_HOST_FILE = os.path.join(XRAY_DIR, "connect_host")
+
+def _connect_host_file() -> str:
+    return os.path.join(XRAY_DIR, "connect_host")
+
 BLACKLIST_FILE = os.path.join(XRAY_DIR, "cdn_blacklist.txt")
 SCAN_LOCK = "/tmp/vwn-cdn-scan.lock"
 WATCH_LOCK = "/tmp/vwn-cdn-watch.lock"
@@ -340,12 +343,12 @@ def apply_ip(ip: str) -> bool:
         return False
     cur = ""
     try:
-        cur = Path(CONNECT_HOST_FILE).read_text().strip()
+        cur = Path(_connect_host_file()).read_text().strip()
     except FileNotFoundError:
         pass
     if ip == cur:
         return True
-    _write(CONNECT_HOST_FILE, ip + "\n")
+    _write(_connect_host_file(), ip + "\n")
     _write(ACTIVE_IP_FILE, ip + "\n")
     for f in [BETTER_COUNT_FILE, f"{BETTER_COUNT_FILE}.ip"]:
         Path(f).unlink(missing_ok=True)
@@ -450,7 +453,7 @@ def watch() -> int:
 
         cur = ""
         try:
-            cur = Path(CONNECT_HOST_FILE).read_text().strip()
+            cur = Path(_connect_host_file()).read_text().strip()
         except FileNotFoundError:
             pass
 
@@ -555,14 +558,14 @@ def set_mode(new_mode: str) -> None:
     if new_mode.startswith("auto_"):
         install_watcher()
         # сразу применить лучший IP из кэша, если есть
-        if not Path(CONNECT_HOST_FILE).is_file() or not Path(CONNECT_HOST_FILE).read_text().strip():
+        if not Path(_connect_host_file()).is_file() or not Path(_connect_host_file()).read_text().strip():
             best = find_best(new_mode)
             if best:
                 apply_ip(best)
     else:
         remove_watcher()
     if new_mode == "off":
-        for f in [CONNECT_HOST_FILE, ACTIVE_IP_FILE, BETTER_COUNT_FILE,
+        for f in [_connect_host_file(), ACTIVE_IP_FILE, BETTER_COUNT_FILE,
                   f"{BETTER_COUNT_FILE}.ip"]:
             Path(f).unlink(missing_ok=True)
         from vwn.modules.sub import rebuild_all_sub_files
@@ -575,7 +578,7 @@ def status() -> dict:
     mode = config.vwn_conf_get("CDN_MODE") or "off"
     cur = ""
     try:
-        cur = Path(CONNECT_HOST_FILE).read_text().strip()
+        cur = Path(_connect_host_file()).read_text().strip()
     except FileNotFoundError:
         pass
     cached_ping = ""
