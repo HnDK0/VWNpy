@@ -350,6 +350,8 @@ def _install_amneziawg() -> str:
     print("  Kernel module not available — falling back to userspace WireGuard.")
     print("  Note: AmneziaWG obfuscation not available in this mode.")
     shell.run(["apt-get", "install", "-y", "wireguard-tools"], timeout=60, check=False)
+    if not shutil.which("resolvconf"):
+        shell.run(["apt-get", "install", "-y", "openresolv"], timeout=30, check=False)
     _download_wireguard_go()
 
     if shutil.which("wg-quick") and os.path.exists(WIREGUARD_GO_BIN):
