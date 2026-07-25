@@ -6,35 +6,41 @@ from vwn.tui.helpers import ask_list, restart_xray_services, run_cmd, run_task, 
 
 
 def manage_reality() -> None:
-    from vwn.modules.xray import (read_reality_info, update_reality_port,
+    from vwn.modules.xray import (read_reality_info,
                                     update_reality_dest, set_reality_mode,
-                                    remove_reality, update_uuid_all)
+                                    disable_reality, enable_reality)
+    from vwn.modules.sub import get_disabled_protocols
     while True:
         info = read_reality_info()
-        if info:
+        disabled = "reality" in get_disabled_protocols()
+        if info and not disabled:
             m = info["mode"].upper()
             xh = f", path={info.get('xhttp_path','')}, mode={info.get('xhttp_mode','')}" if info["mode"] == "xhttp" else ""
             console.print(f"\n[bold]Reality[/]")
             console.print(f"  Порт: {info['port']}, Dest: {info['dest']}")
             console.print(f"  Режим: {m}{xh}")
             console.print(f"  UUID: {info['uuid'][:8]}... PubKey: {info['pub_key'][:16]}...")
+        elif disabled:
+            console.print("\n[bold]Reality[/]  [yellow]ОТКЛЮЧЁН[/]")
         else:
             console.print("\n[bold]Reality[/]  [red]НЕ УСТАНОВЛЕН[/]")
         console.print("  1. Показать информацию")
         console.print("  2. Показать QR")
-        console.print("  3. Сменить порт")
-        console.print("  4. Сменить dest (fallback)")
-        console.print("  5. Сменить транспорт (TCP/XHTTP)")
-        console.print("  6. Сменить UUID")
-        console.print("  7. Перезапустить")
-        console.print("  8. Показать логи")
-        console.print("  9. Удалить")
+        console.print("  3. Сменить dest (fallback)")
+        console.print("  4. Сменить транспорт (TCP/XHTTP)")
+        console.print("  5. Сменить UUID")
+        console.print("  6. Перезапустить")
+        console.print("  7. Показать логи")
+        if disabled:
+            console.print("  8. Включить")
+        else:
+            console.print("  8. Отключить")
         console.print("  0. Назад")
         val = input("> ").strip()
         if val == "0":
             break
         elif val == "1":
-            if info:
+            if info and not disabled:
                 console.print(f"UUID:       {info['uuid']}")
                 console.print(f"Порт:       {info['port']}")
                 console.print(f"Назначение: {info['dest']}")
@@ -46,41 +52,34 @@ def manage_reality() -> None:
                     console.print(f"XHTTP путь: {info.get('xhttp_path','')}")
                     console.print(f"XHTTP режим: {info.get('xhttp_mode','')}")
             else:
-                console.print("[yellow]Reality не установлен[/]")
+                console.print("[yellow]Reality не доступен[/]")
         elif val == "2":
             run_cmd("vwn qr --type reality")
         elif val == "3":
-            if not info:
-                console.print("[red]Не установлен[/]"); wait_key(); continue
-            try:
-                p = int(input(f"  Порт [{info['port']}]: ").strip())
-                if 1024 <= p <= 65535:
-                    run_task("Смена порта", lambda: update_reality_port(p))
-                else:
-                    console.print("[red]Порт должен быть 1024-65535[/]")
-            except (ValueError, EOFError):
-                pass
-        elif val == "4":
-            if not info:
+            if not info or disabled:
                 console.print("[red]Не установлен[/]"); wait_key(); continue
             dest = input(f"  Dest [{info['dest']}]: ").strip()
             if dest and ":" in dest:
                 run_task("Смена dest", lambda: update_reality_dest(dest))
             else:
                 console.print("[red]Формат: host:port[/]")
-        elif val == "5":
-            if not info:
+        elif val == "4":
+            if not info or disabled:
                 console.print("[red]Не установлен[/]"); wait_key(); continue
             mode = ask_list("Режим транспорта", ["TCP (vision)", "XHTTP"])
             if mode == "TCP (vision)":
                 set_reality_mode("tcp")
+                from vwn.modules.sub import rebuild_all_sub_files
+                rebuild_all_sub_files()
                 console.print("[bright_green]→ TCP (xtls-rprx-vision)[/]")
             elif mode == "XHTTP":
                 xm = ask_list("XHTTP mode", ["auto", "stream-one", "stream-up",
                                              "packet-one", "packet-up", "none"])
                 set_reality_mode("xhttp", xhttp_mode=xm)
+                from vwn.modules.sub import rebuild_all_sub_files
+                rebuild_all_sub_files()
                 console.print(f"[bright_green]→ XHTTP (mode={xm})[/]")
-        elif val == "6":
+        elif val == "5":
             from vwn.modules import users as _usr
             _usr.init_users_file()
             _ul = _usr.list_users()
@@ -99,13 +98,16 @@ def manage_reality() -> None:
                     _nu = _usr.rekey_user(_n)
                     if _nu:
                         console.print(f"  [bright_green]Новый UUID для {_ul[_n-1]['label']}: {_nu}[/]")
-        elif val == "7":
+        elif val == "6":
             run_cmd("systemctl restart xray-reality")
-        elif val == "8":
+        elif val == "7":
             run_cmd("journalctl -u xray-reality -n 50 --no-pager")
-        elif val == "9":
-            if input("Удалить Reality? (y/N): ").strip().lower() == "y":
-                run_task("Удаление Reality", remove_reality)
+        elif val == "8":
+            if disabled:
+                run_task("Включение Reality", enable_reality)
+            else:
+                if input("Отключить Reality? (y/N): ").strip().lower() == "y":
+                    run_task("Отключение Reality", disable_reality)
         wait_key()
 
 
@@ -114,14 +116,25 @@ def manage_ws_xhttp() -> None:
                                    update_xhttp_path, update_domain,
                                    update_stub_url, update_uuid_all,
                                    set_xhttp_mode, renew_ssl,
-                                   remove_ws, remove_xhttp, check_cert)
+                                   disable_ws, enable_ws,
+                                   disable_xhttp, enable_xhttp, check_cert)
+    from vwn.modules.sub import get_disabled_protocols
     while True:
-        ws = shell.service_active("xray-ws.service")
-        xh = shell.service_active("xray-xhttp.service")
+        disabled = get_disabled_protocols()
+        ws_disabled = "ws" in disabled
+        xh_disabled = "xhttp" in disabled
+        ws = shell.service_active("xray-ws.service") and not ws_disabled
+        xh = shell.service_active("xray-xhttp.service") and not xh_disabled
         info = read_ws_xhttp_info()
         console.print(f"\n[bold]WS / XHTTP[/]")
-        console.print(f"  WS:     {'[bright_green]РАБОТАЕТ[/]' if ws else '[red]ОСТАНОВЛЕН[/]'}")
-        console.print(f"  XHTTP:  {'[bright_green]РАБОТАЕТ[/]' if xh else '[red]ОСТАНОВЛЕН[/]'}")
+        if ws_disabled:
+            console.print(f"  WS:     [yellow]ОТКЛЮЧЁН[/]")
+        else:
+            console.print(f"  WS:     {'[bright_green]РАБОТАЕТ[/]' if ws else '[red]ОСТАНОВЛЕН[/]'}")
+        if xh_disabled:
+            console.print(f"  XHTTP:  [yellow]ОТКЛЮЧЁН[/]")
+        else:
+            console.print(f"  XHTTP:  {'[bright_green]РАБОТАЕТ[/]' if xh else '[red]ОСТАНОВЛЕН[/]'}")
         console.print(f"  Домен:    {info['domain']}")
         console.print(f"  URL загл.: {info['stub_url']}")
         console.print(f"  WS path:  {info['ws_path']}")
@@ -140,8 +153,14 @@ def manage_ws_xhttp() -> None:
         console.print(" 11. Перезапустить сервисы")
         console.print(" 12. Логи WS")
         console.print(" 13. Логи XHTTP")
-        console.print(" 14. Удалить WS")
-        console.print(" 15. Удалить XHTTP")
+        if ws_disabled:
+            console.print(" 14. Включить WS")
+        else:
+            console.print(" 14. Отключить WS")
+        if xh_disabled:
+            console.print(" 15. Включить XHTTP")
+        else:
+            console.print(" 15. Отключить XHTTP")
         console.print("  0. Назад")
         val = input("> ").strip()
         if val == "0":
@@ -253,9 +272,15 @@ def manage_ws_xhttp() -> None:
         elif val == "13":
             run_cmd("journalctl -u xray-xhttp -n 50 --no-pager")
         elif val == "14":
-            if input("Удалить WS? (y/N): ").strip().lower() == "y":
-                run_task("Удаление WS", remove_ws)
+            if ws_disabled:
+                run_task("Включение WS", enable_ws)
+            else:
+                if input("Отключить WS? (y/N): ").strip().lower() == "y":
+                    run_task("Отключение WS", disable_ws)
         elif val == "15":
-            if input("Удалить XHTTP? (y/N): ").strip().lower() == "y":
-                run_task("Удаление XHTTP", remove_xhttp)
+            if xh_disabled:
+                run_task("Включение XHTTP", enable_xhttp)
+            else:
+                if input("Отключить XHTTP? (y/N): ").strip().lower() == "y":
+                    run_task("Отключение XHTTP", disable_xhttp)
         wait_key()

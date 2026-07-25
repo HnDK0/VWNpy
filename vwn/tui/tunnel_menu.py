@@ -44,6 +44,8 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
         _cfg.vwn_conf_set(conf_key, mode)
     else:
         _cfg.vwn_conf_del(conf_key)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
     return actual_tag
 
 

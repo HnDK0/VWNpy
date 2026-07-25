@@ -252,6 +252,8 @@ def update_reality_port(port: int) -> None:
     shell.run(["ufw", "allow", f"{port}/tcp"], check=False)
     config.vwn_conf_set("REALITY_PORT", str(port))
     shell.run(["systemctl", "restart", "xray-reality"], check=False)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
 
 
 def update_reality_dest(dest: str) -> None:
@@ -266,6 +268,8 @@ def update_reality_dest(dest: str) -> None:
     _write_json(path, cfg)
     config.vwn_conf_set("REALITY_DEST", dest)
     shell.run(["systemctl", "restart", "xray-reality"], check=False)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
 
 
 def set_reality_mode(mode: str, xhttp_path: str | None = None,
@@ -304,23 +308,43 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
     shell.run(["systemctl", "restart", "xray-reality"], check=False)
 
 
-def remove_reality() -> None:
-    cfg = _read_json(os.path.join(config.XRAY_DIR, "xray-reality.json"))
-    if cfg:
-        port = cfg["inbounds"][0].get("port")
-        if port:
-            shell.run(["ufw", "delete", "allow", f"{port}/tcp"], check=False)
+def _add_disabled(protocol: str) -> None:
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
+    disabled.add(protocol)
+    config.vwn_conf_set("DISABLED_PROTOCOLS", ",".join(sorted(disabled)))
+
+
+def _del_disabled(protocol: str) -> None:
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
+    disabled.discard(protocol)
+    if disabled:
+        config.vwn_conf_set("DISABLED_PROTOCOLS", ",".join(sorted(disabled)))
+    else:
+        config.vwn_conf_del("DISABLED_PROTOCOLS")
+
+
+def disable_reality() -> None:
     shell.run(["systemctl", "stop", "xray-reality"], check=False)
     shell.run(["systemctl", "disable", "xray-reality"], check=False)
-    for f in [os.path.join(config.XRAY_DIR, "xray-reality.json"),
-              "/usr/local/etc/xray/reality_client.txt",
-              "/etc/systemd/system/xray-reality.service"]:
-        if os.path.isfile(f):
-            os.remove(f)
-    for k in ["REALITY_MODE", "REALITY_XHTTP_PATH", "REALITY_XHTTP_MODE",
-              "REALITY_PORT", "REALITY_DEST", "REALITY_PUBKEY", "REALITY_SHORT_ID"]:
-        config.vwn_conf_del(k)
-    shell.run(["systemctl", "daemon-reload"], check=False)
+    p = os.path.join(config.XRAY_DIR, "xray-reality.json")
+    if os.path.isfile(p):
+        os.rename(p, p + ".disabled")
+    _add_disabled("reality")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+
+
+def enable_reality() -> None:
+    p = os.path.join(config.XRAY_DIR, "xray-reality.json.disabled")
+    if os.path.isfile(p):
+        os.rename(p, p.removesuffix(".disabled"))
+    shell.run(["systemctl", "enable", "xray-reality"], check=False)
+    shell.run(["systemctl", "start", "xray-reality"], check=False)
+    _del_disabled("reality")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
 
 
 def set_xhttp_mode(mode: str) -> None:
@@ -335,6 +359,8 @@ def set_xhttp_mode(mode: str) -> None:
     _write_json(path, cfg)
     config.vwn_conf_set("XHTTP_MODE", mode)
     shell.run(["systemctl", "restart", "xray-xhttp"], check=False)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
 
 
 def write_nginx_loopback_config(template: str, output: str, **kw) -> None:
@@ -698,22 +724,45 @@ def renew_ssl(domain: str, method: str = "standalone",
     shell.run(["systemctl", "reload", "nginx"], check=False)
 
 
-def remove_ws() -> None:
+def disable_ws() -> None:
     shell.run(["systemctl", "stop", "xray-ws"], check=False)
     shell.run(["systemctl", "disable", "xray-ws"], check=False)
     p = os.path.join(config.XRAY_DIR, "config.json")
     if os.path.isfile(p):
-        os.remove(p)
-    config.vwn_conf_del("WS_PATH")
-    shell.run(["systemctl", "daemon-reload"], check=False)
+        os.rename(p, p + ".disabled")
+    _add_disabled("ws")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
 
 
-def remove_xhttp() -> None:
+def enable_ws() -> None:
+    p = os.path.join(config.XRAY_DIR, "config.json.disabled")
+    if os.path.isfile(p):
+        os.rename(p, p.removesuffix(".disabled"))
+    shell.run(["systemctl", "enable", "xray-ws"], check=False)
+    shell.run(["systemctl", "start", "xray-ws"], check=False)
+    _del_disabled("ws")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+
+
+def disable_xhttp() -> None:
     shell.run(["systemctl", "stop", "xray-xhttp"], check=False)
     shell.run(["systemctl", "disable", "xray-xhttp"], check=False)
     p = os.path.join(config.XRAY_DIR, "xhttp.json")
     if os.path.isfile(p):
-        os.remove(p)
-    config.vwn_conf_del("XHTTP_PATH")
-    config.vwn_conf_del("XHTTP_MODE")
-    shell.run(["systemctl", "daemon-reload"], check=False)
+        os.rename(p, p + ".disabled")
+    _add_disabled("xhttp")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+
+
+def enable_xhttp() -> None:
+    p = os.path.join(config.XRAY_DIR, "xhttp.json.disabled")
+    if os.path.isfile(p):
+        os.rename(p, p.removesuffix(".disabled"))
+    shell.run(["systemctl", "enable", "xray-xhttp"], check=False)
+    shell.run(["systemctl", "start", "xray-xhttp"], check=False)
+    _del_disabled("xhttp")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()

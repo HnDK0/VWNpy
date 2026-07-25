@@ -97,6 +97,8 @@ def provision(domain, stub, reality_dest, xhttp_mode):
     """Сгенерировать все конфиги (Reality + WS + XHTTP + loopback-nginx)."""
     from vwn.modules.xray import provision_configs
     params = provision_configs(domain, stub, reality_dest, xhttp_mode=xhttp_mode)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
     click.echo(f"Конфиги записаны. UUID={params['uuid']}")
 
 

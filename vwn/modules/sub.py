@@ -264,6 +264,11 @@ def get_conf_or_none(key: str) -> "str | None":
     return config.vwn_conf_get(key)
 
 
+def get_disabled_protocols() -> set[str]:
+    raw = config.vwn_conf_get("DISABLED_PROTOCOLS") or ""
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
 def build_user_sub_file(
     uuid_val: str,
     label: str,
@@ -296,21 +301,22 @@ def build_user_sub_file(
     cdn_ip = connect_host if connect_host != domain else ""
 
     lines: list[str] = []
+    disabled = get_disabled_protocols()
 
-    if ws_path:
+    if ws_path and "ws" not in disabled:
         name_ws = users.get_config_name("WS", label)
         lines.append(generate_ws_url(
             uuid_val, connect_host, 443, ws_path, domain, name_ws,
         ))
 
-    if xhttp_path:
+    if xhttp_path and "xhttp" not in disabled:
         name_xhttp = users.get_config_name("XHTTP", label)
         lines.append(generate_xhttp_url(
             uuid_val, connect_host, 443, xhttp_path, domain, name_xhttp,
             mode=xhttp_mode,
         ))
 
-    if pub_key and short_id:
+    if pub_key and short_id and "reality" not in disabled:
         dest_host = reality_dest.split(":", 1)[0]
         name_reality = users.get_config_name("Reality", label)
         reality_mode = get_conf_or_none("REALITY_MODE") or "tcp"
