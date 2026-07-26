@@ -98,11 +98,11 @@ def generate_reality_keypair() -> "tuple[str, str]":
     return priv, pub
 
 
-def reality_config(uuid: str, dest: str, server_name: str,
+def reality_config(uuid: str, server_name: str,
                    private_key: str, short_id: str,
                    port: int = config.REALITY_PUBLIC_PORT,
                    fallback_port: int = config.NGINX_LOOPBACK_PORT) -> dict:
-    """Reality на 443 публично, fallback (dest) → nginx на localhost:fallback_port."""
+    """Reality на 443 публично, fallback → nginx на localhost:fallback_port."""
     return {
         "log": _log("/var/log/xray/reality-error.log"),
         "dns": _dns(),
@@ -226,8 +226,7 @@ def read_reality_info(path: str | None = None) -> dict | None:
     mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
     info = {
         "port": ib.get("port"),
-        "dest": rs.get("dest", ""),
-        "server_name": (rs.get("serverNames") or [""])[0],
+        "sni": (rs.get("serverNames") or [""])[0],
         "uuid": (ib.get("settings", {}).get("clients") or [{}])[0].get("id", ""),
         "short_id": (rs.get("shortIds") or [""])[0],
         "private_key": rs.get("privateKey", ""),
@@ -256,14 +255,15 @@ def update_reality_port(port: int) -> None:
     rebuild_all_sub_files()
 
 
-def update_reality_dest(dest: str) -> None:
+def update_reality_sni(dest: str) -> None:
+    """Сменить домен-камуфляж (SNI). Формат: host:port (напр. microsoft.com:443).
+    dest (127.0.0.1:8443) — nginx loopback — не трогает."""
     path = os.path.join(config.XRAY_DIR, "xray-reality.json")
     cfg = _read_json(path)
     if cfg is None:
         raise RuntimeError("Reality не установлен")
     host = dest.split(":", 1)[0]
     ib = cfg["inbounds"][0]
-    ib["streamSettings"]["realitySettings"]["dest"] = dest
     ib["streamSettings"]["realitySettings"]["serverNames"] = [host]
     _write_json(path, cfg)
     config.vwn_conf_set("REALITY_DEST", dest)
@@ -444,13 +444,12 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
         pub = config.vwn_conf_get("REALITY_PUBKEY") or "unknown"
     else:
         priv, pub = generate_reality_keypair()
-    # Reality: serverNames (и клиентский SNI) ДОЛЖНЫ совпадать с dest-хостом,
-    # иначе сервер проксирует ClientHello не туда и handshake рвётся.
+    # Reality: serverNames (клиентский SNI) = sname (домен-камуфляж).
     sname = server_name or reality_dest.split(":", 1)[0]
     proxy_host = urllib.parse.urlparse(stub).netloc or domain
 
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
-                         uuid_, reality_dest, sname, priv, short_id,
+                         uuid_, sname, priv, short_id,
                          port=reality_port)
     write_ws_config(os.path.join(config.XRAY_DIR, "config.json"),
                     uuid_, config.XRAY_WS_PORT, ws_path, domain)
@@ -525,7 +524,7 @@ def rebuild_configs() -> None:
 
     server_name = reality_dest.split(":", 1)[0]
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
-                         uuid_, reality_dest, server_name,
+                         uuid_, server_name,
                          private_key, short_id, port=reality_port)
 
     reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"

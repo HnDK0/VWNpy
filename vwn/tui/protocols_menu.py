@@ -7,7 +7,7 @@ from vwn.tui.helpers import ask_list, restart_xray_services, run_cmd, run_task, 
 
 def manage_reality() -> None:
     from vwn.modules.xray import (read_reality_info,
-                                    update_reality_dest, set_reality_mode,
+                                    update_reality_sni, set_reality_mode,
                                     disable_reality, enable_reality)
     from vwn.modules.sub import get_disabled_protocols
     while True:
@@ -17,7 +17,7 @@ def manage_reality() -> None:
             m = info["mode"].upper()
             xh = f", path={info.get('xhttp_path','')}, mode={info.get('xhttp_mode','')}" if info["mode"] == "xhttp" else ""
             console.print(f"\n[bold]Reality[/]")
-            console.print(f"  Порт: {info['port']}, Dest: {info['dest']}")
+            console.print(f"  Порт: {info['port']}, SNI: {info['sni']}")
             console.print(f"  Режим: {m}{xh}")
             console.print(f"  UUID: {info['uuid'][:8]}... PubKey: {info['pub_key'][:16]}...")
         elif disabled:
@@ -26,7 +26,7 @@ def manage_reality() -> None:
             console.print("\n[bold]Reality[/]  [red]НЕ УСТАНОВЛЕН[/]")
         console.print("  1. Показать информацию")
         console.print("  2. Показать QR")
-        console.print("  3. Сменить dest (fallback)")
+        console.print("  3. Сменить домен-камуфляж (SNI)")
         console.print("  4. Сменить транспорт (TCP/XHTTP)")
         console.print("  5. Сменить UUID")
         console.print("  6. Перезапустить")
@@ -43,8 +43,7 @@ def manage_reality() -> None:
             if info and not disabled:
                 console.print(f"UUID:       {info['uuid']}")
                 console.print(f"Порт:       {info['port']}")
-                console.print(f"Назначение: {info['dest']}")
-                console.print(f"Сервер:     {info['server_name']}")
+                console.print(f"SNI:        {info['sni']}")
                 console.print(f"Пуб.ключ:   {info['pub_key']}")
                 console.print(f"Коротк.ID:  {info['short_id']}")
                 console.print(f"Режим:      {info['mode'].upper()}")
@@ -58,11 +57,11 @@ def manage_reality() -> None:
         elif val == "3":
             if not info or disabled:
                 console.print("[red]Не установлен[/]"); wait_key(); continue
-            dest = input(f"  Dest [{info['dest']}]: ").strip()
+            dest = input(f"  SNI [{info['sni']}]: ").strip()
             if dest and ":" in dest:
-                run_task("Смена dest", lambda: update_reality_dest(dest))
-            else:
-                console.print("[red]Формат: host:port[/]")
+                run_task("Смена SNI", lambda: update_reality_sni(dest))
+            elif dest:
+                console.print("[red]Формат: host:port (напр. microsoft.com:443)[/]")
         elif val == "4":
             if not info or disabled:
                 console.print("[red]Не установлен[/]"); wait_key(); continue

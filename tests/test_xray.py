@@ -26,7 +26,7 @@ def test_generate_uuid_format():
 
 
 def test_reality_config_shape():
-    c = xray.reality_config("uuid-1", "microsoft.com:443", "vpn.example.com",
+    c = xray.reality_config("uuid-1", "vpn.example.com",
                             "PRIV", "SHORT", port=443, fallback_port=8443)
     ib = c["inbounds"][0]
     assert ib["port"] == 443
@@ -73,7 +73,7 @@ def test_provision_writes_valid_configs(paths):
     )
     rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
     assert rc["inbounds"][0]["port"] == 443
-    # serverNames должен совпадать с dest-хостом (microsoft.com), а не с доменом
+    # serverNames = SNI-домен (microsoft.com), а не домен сервера
     assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"] == ["microsoft.com"]
     # Fallback dest → nginx loopback (не-Reality трафик)
     assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"

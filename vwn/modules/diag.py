@@ -78,7 +78,7 @@ def _config_summary() -> str:
         users_info += ": " + ", ".join(f"{_usr.get_cached_flag()} {u['label']}" for u in users_list)
     pairs = [
         ("Domain", config.vwn_conf_get("DOMAIN") or "-"),
-        ("Reality dest", config.vwn_conf_get("REALITY_DEST") or "-"),
+        ("Reality SNI", config.vwn_conf_get("REALITY_DEST") or "-"),
         ("Reality port", config.vwn_conf_get("REALITY_PORT") or "443"),
         ("Users", users_info),
         ("Server IP", config.vwn_conf_get("SERVER_IP") or "-"),
