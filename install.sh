@@ -5,8 +5,8 @@
 #   1. Локально:  sudo bash install.sh --domain vpn.example.com
 #   2. Удалённо:  bash <(curl -sL https://cln.sh/...) --domain vpn.example.com
 #
-# Ставит python3 + pip, скачивает wheel из GitHub Releases,
-# pip install, запускает vwn install.
+# Ставит python3 + python3-venv, скачивает wheel из GitHub Releases,
+# ставит его в выделенный venv (PEP 668), запускает vwn install.
 # =================================================================
 set -euo pipefail
 
@@ -34,19 +34,18 @@ EOF
 [[ "$EUID" -eq 0 ]] || { echo "Ошибка: запустите от имени root (sudo bash install.sh)"; exit 1; }
 [[ "$#" -eq 0 || "$1" == "--help" || "$1" == "-h" ]] && usage
 
-# 1. python3 + pip
-if ! command -v python3 &>/dev/null || ! command -v pip3 &>/dev/null; then
+# 1. python3 + python3-venv (venv нужен из-за PEP 668 на Debian 12/Ubuntu 24.04)
+if ! command -v python3 &>/dev/null; then
   apt-get update -qq
 fi
 if ! command -v python3 &>/dev/null; then
   echo ">>> Установка python3..."
-  apt-get install -y -qq python3 python3-pip
+  apt-get install -y -qq python3
 fi
-if ! command -v pip3 &>/dev/null; then
-  echo ">>> Установка pip3..."
-  apt-get install -y -qq python3-pip
+if ! dpkg -s python3-venv &>/dev/null; then
+  echo ">>> Установка python3-venv..."
+  apt-get install -y -qq python3-venv
 fi
-PIP_ROOT_USER_ACTION=ignore python3 -m pip install --upgrade pip -q
 
 # 2. curl + unzip + nano (нужны для скачивания wheel и редактирования списков)
 if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null || ! command -v nano &>/dev/null; then
@@ -54,24 +53,31 @@ if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null || ! command 
   apt-get install -y -qq curl unzip nano
 fi
 
-# 3. Скачать и установить wheel (или из локальной папки)
+# 3. Скачать и установить wheel (или из локальной папки) в выделенный venv
+#    venv — из-за PEP 668 (Debian 12/Ubuntu 24.04) системный pip не работает.
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="/usr/local/lib/vwnpy/venv"
+
+python3 -m venv "$VENV_DIR"
+"$VENV_DIR/bin/pip" install --upgrade pip -q
 
 if [[ -f "$SRC_DIR/dist/"*.whl ]]; then
   WHL=$(ls "$SRC_DIR"/dist/*.whl | head -1)
   echo ">>> Установка из локального wheel: $WHL"
-  python3 -m pip install --quiet --force-reinstall "$WHL"
+  "$VENV_DIR/bin/pip" install --quiet --force-reinstall "$WHL"
 elif [[ -f "$SRC_DIR/pyproject.toml" ]]; then
   echo ">>> Установка из исходников: $SRC_DIR"
-  python3 -m pip install --quiet "$SRC_DIR"
+  "$VENV_DIR/bin/pip" install --quiet "$SRC_DIR"
 else
   echo ">>> Скачивание wheel из GitHub Releases..."
   TMPDIR=$(mktemp -d)
   curl -sL "$REPO/releases/latest/download/vwnpy-wheel.zip" -o "$TMPDIR/wheel.zip"
   unzip -q "$TMPDIR/wheel.zip" -d "$TMPDIR/wheel"
-  python3 -m pip install --quiet "$TMPDIR/wheel"/*.whl
+  "$VENV_DIR/bin/pip" install --quiet "$TMPDIR/wheel"/*.whl
   rm -rf "$TMPDIR"
 fi
 
+ln -sf "$VENV_DIR/bin/vwn" /usr/local/bin/vwn
+
 # 4. Запуск установки
-exec python3 -m vwn install "$@"
+exec /usr/local/bin/vwn install "$@"
