@@ -19,14 +19,26 @@ USER = "psiphon"
 
 SERVER_LIST_URL = ("https://s3.amazonaws.com/psiphon/web/"
                    "mjr4-p23r-puwl/server_list_compressed")
+# Ключ подписи server_list_compressed. Обязан быть ровно 732 симв. и совпадать
+# с signingPublicKeyDigest (sha256 строки ключа) в скачанном листе.
+# Если Psiphon падает в логе с "illegal base64 data at input byte N" — ключ
+# повреждён. Проверка: python -m pytest tests/test_psiphon.py::test_server_list_key_valid
+#
+# Как получить актуальный ключ, если Psiphon его сменит:
+#   1. Скачать лист: curl -sSfL <SERVER_LIST_URL> -o list.gz (gzip, скип 2 байт
+#      заголовка), распаковать -> JSON -> поле signingPublicKeyDigest = sha256
+#      строки ключа.
+#   2. Извлечь кандидата из официальных клиентов Psiphon (Android/iOS/Windows):
+#      grep бинаря по base64-префиксу "MIICIDAN...".
+#   3. Принять кандидата, у которого sha256(строка) == signingPublicKeyDigest.
 SERVER_LIST_KEY = ("MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEA"
                    "t7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax"
                    "3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdym"
                    "twzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvK"
                    "wRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RR"
-                   "wLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZoK/"
+                   "wLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/K"
                    "rvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVt"
-                   "cTjjhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7Gs"
+                   "cTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7Gs"
                    "tZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqco"
                    "dWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGj"
                    "VZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZY"

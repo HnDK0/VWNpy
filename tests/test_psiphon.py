@@ -1,11 +1,24 @@
 """Tests for psiphon module."""
 
+import base64
+import hashlib
 import json
 import os
 
 import pytest
 
 from vwn.modules import psiphon
+
+
+def test_server_list_key_valid():
+    # Ключ обязан быть полным (732 симв.) и совпадать с signingPublicKeyDigest
+    # актуального server_list_compressed (sha256 строки ключа). Если Psiphon
+    # в логе падает с "illegal base64 data at input byte N" — ломается здесь.
+    k = psiphon.SERVER_LIST_KEY
+    assert len(k) == 732
+    assert base64.b64decode(k)
+    digest = hashlib.sha256(k.encode()).hexdigest().upper()
+    assert digest == "57DD879214D9A9E4519609883EEC96A687799C99BBC4BCF5E015D8C3A06368F7"
 
 
 def test_status_inactive(monkeypatch):
