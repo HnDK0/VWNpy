@@ -34,15 +34,29 @@ def _sockopt() -> dict:
 
 
 def _dns() -> dict:
-    return {"servers": ["127.0.0.53", "1.1.1.1"], "queryStrategy": "UseIPv4"}
+    """DNS конфиг для Xray. Читает выбор пользователя из vwn.conf."""
+    from vwn.core import config
+    v4_primary = config.vwn_conf_get("DNS_V4_PRIMARY") or "1.1.1.1"
+    v4_fallback = config.vwn_conf_get("DNS_V4_FALLBACK") or "9.9.9.9"
+    v6_primary = config.vwn_conf_get("DNS_V6_PRIMARY") or ""
+    servers = ["127.0.0.53", v4_primary, v4_fallback]
+    if v6_primary:
+        servers.append(v6_primary)
+        query_strategy = "UseIP"
+    else:
+        query_strategy = "UseIPv4"
+    return {"servers": servers, "queryStrategy": query_strategy}
 
 
 def _outbounds() -> list:
     # ponytail: outbound'ы туннелей (warp/psiphon/tor) добавляются
     # модулями при установке через add_outbound(). Здесь только базовые.
+    from vwn.core import config
+    v6 = config.vwn_conf_get("DNS_V6_PRIMARY") or ""
+    strategy = "UseIP" if v6 else "UseIPv4"
     return [
         {"tag": "dns-out", "protocol": "dns"},
-        {"tag": "free", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
+        {"tag": "free", "protocol": "freedom", "settings": {"domainStrategy": strategy}},
         {"tag": "block", "protocol": "blackhole"},
     ]
 

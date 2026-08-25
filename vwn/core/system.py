@@ -386,15 +386,63 @@ def preflight() -> bool:
     return True
 
 
-_DNS_CANDIDATES = [
-    "1.1.1.1",        # Cloudflare — без логов
-    "1.1.1.2",        # Cloudflare (malware block)
-    "9.9.9.9",        # Quad9 — без логов, блокирует малварь
-    "9.9.9.10",       # Quad9 (без блок-листа)
-    "94.140.14.14",   # AdGuard DNS — без логов
-    "76.76.2.2",      # Control D — без логов
-    "76.76.19.19",    # Alternate DNS — без логов
-]
+_DNS_PRESETS = {
+    "cloudflare": {
+        "name": "Cloudflare",
+        "v4": ["1.1.1.1", "1.0.0.1"],
+        "v6": ["2606:4700:4700::1111", "2606:4700:4700::1001"],
+    },
+    "google": {
+        "name": "Google",
+        "v4": ["8.8.8.8", "8.8.4.4"],
+        "v6": ["2001:4860:4860::8888", "2001:4860:4860::8844"],
+    },
+    "quad9": {
+        "name": "Quad9",
+        "v4": ["9.9.9.9", "149.112.112.112"],
+        "v6": ["2620:fe::fe", "2620:fe::9"],
+    },
+    "adguard": {
+        "name": "AdGuard",
+        "v4": ["94.140.14.14", "94.140.15.15"],
+        "v6": ["2a10:50c0::ad1", "2a10:50c0::ad2"],
+    },
+    "opendns": {
+        "name": "OpenDNS",
+        "v4": ["208.67.222.222", "208.67.220.220"],
+        "v6": ["2620:119:35::35", "2620:119:53::53"],
+    },
+}
+
+
+def dns_status() -> dict:
+    """Текущий DNS из vwn.conf. Возвращает {preset, v4: [primary, fallback], v6: [primary, fallback], custom}."""
+    from vwn.core import config
+    preset = config.vwn_conf_get("DNS_PRESET") or ""
+    v4_primary = config.vwn_conf_get("DNS_V4_PRIMARY") or ""
+    v4_fallback = config.vwn_conf_get("DNS_V4_FALLBACK") or ""
+    v6_primary = config.vwn_conf_get("DNS_V6_PRIMARY") or ""
+    v6_fallback = config.vwn_conf_get("DNS_V6_FALLBACK") or ""
+    return {
+        "preset": preset,
+        "v4": [v4_primary, v4_fallback],
+        "v6": [v6_primary, v6_fallback],
+    }
+
+
+def dns_set(preset: str = "", v4_primary: str = "", v4_fallback: str = "",
+            v6_primary: str = "", v6_fallback: str = "") -> None:
+    """Сохранить выбор DNS в vwn.conf и сбросить marker для переконфигурации."""
+    from vwn.core import config
+    config.vwn_conf_set("DNS_PRESET", preset)
+    config.vwn_conf_set("DNS_V4_PRIMARY", v4_primary)
+    config.vwn_conf_set("DNS_V4_FALLBACK", v4_fallback)
+    config.vwn_conf_set("DNS_V6_PRIMARY", v6_primary)
+    config.vwn_conf_set("DNS_V6_FALLBACK", v6_fallback)
+    # Сбросить marker чтобы setup_system_dns() применил новые настройки
+    marker = "/usr/local/etc/xray/.dns_configured"
+    if os.path.isfile(marker):
+        os.remove(marker)
 
 
 def _test_dns_latency(dns: str, timeout: int = 3) -> float:
@@ -407,30 +455,67 @@ def _test_dns_latency(dns: str, timeout: int = 3) -> float:
     return float(m.group(1)) if m else 9999
 
 
-def _pick_best_dns() -> list[str]:
-    """Протестировать всех кандидатов, вернуть [primary, fallback] по скорости."""
-    results = [(dns, _test_dns_latency(dns)) for dns in _DNS_CANDIDATES]
-    results.sort(key=lambda x: x[1])
-    best = [dns for dns, ms in results if ms < 9999]
-    if len(best) < 2:
-        return ["1.1.1.1", "9.9.9.9"]
-    return best[:2]
+def _pick_best_dns() -> tuple[list[str], list[str]]:
+    """Протестировать кандидатов, вернуть (ipv4_list, ipv6_list) по скорости."""
+    # IPv4
+    v4_results = []
+    for preset_data in _DNS_PRESETS.values():
+        for dns in preset_data["v4"]:
+            ms = _test_dns_latency(dns, timeout=2)
+            if ms < 9999:
+                v4_results.append((dns, ms))
+    v4_results.sort(key=lambda x: x[1])
+    v4_best = [dns for dns, _ in v4_results[:2]]
+    if len(v4_best) < 2:
+        v4_best = ["1.1.1.1", "9.9.9.9"]
+
+    # IPv6
+    v6_best = []
+    for preset_data in _DNS_PRESETS.values():
+        for dns in preset_data["v6"]:
+            ms = _test_dns_latency(dns, timeout=2)
+            if ms < 9999:
+                v6_best.append((dns, ms))
+    v6_best.sort(key=lambda x: x[1])
+    v6_best = [dns for dns, _ in v6_best[:2]]
+
+    return v4_best, v6_best
 
 
 def setup_system_dns() -> None:
-    """Настроить системный DNS (приватные, без логов), блокировать утечку через DNS хостера."""
+    """Настроить системный DNS (приватные, без логов), поддержка IPv4+IPv6."""
     marker = "/usr/local/etc/xray/.dns_configured"
     if os.path.isfile(marker):
         return
-    primary, fallback = _pick_best_dns()
+
+    # Проверить пользовательские настройки из vwn.conf
+    st = dns_status()
+    if st["v4"][0]:
+        # Пользователь выбрал DNS — используем его
+        primary_v4, fallback_v4 = st["v4"]
+        primary_v6, fallback_v6 = st["v6"]
+    else:
+        # Автоподбор по скорости
+        v4_list, v6_list = _pick_best_dns()
+        primary_v4, fallback_v4 = v4_list[0], v4_list[1] if len(v4_list) > 1 else v4_list[0]
+        primary_v6 = v6_list[0] if v6_list else ""
+        fallback_v6 = v6_list[1] if len(v6_list) > 1 else ""
+
+    # systemd-resolved
     if shutil.which("systemd-resolve") or os.path.isfile("/run/systemd/resolve/stub-resolv.conf") \
             or shell.run(["systemctl", "is-active", "--quiet", "systemd-resolved"], check=False).returncode == 0:
         os.makedirs("/etc/systemd/resolved.conf.d", exist_ok=True)
+        dns_line = f"DNS={primary_v4}"
+        if primary_v6:
+            dns_line += f" {primary_v6}"
+        fallback_line = f"FallbackDNS={fallback_v4}"
+        if fallback_v6:
+            fallback_line += f" {fallback_v6}"
         with open("/etc/systemd/resolved.conf.d/99-vwn-dns.conf", "w", encoding="utf-8") as fh:
             fh.write(
                 "[Resolve]\n"
-                f"DNS={primary}\n"
-                f"FallbackDNS={fallback}\n"
+                f"{dns_line}\n"
+                f"{fallback_line}\n"
                 "Domains=~.\n"
                 "DNSSEC=no\n"
                 "Cache=yes\n"
@@ -438,18 +523,24 @@ def setup_system_dns() -> None:
             )
         shell.run(["systemctl", "restart", "systemd-resolved"], check=False)
     else:
+        # resolv.conf
         resolv = "/etc/resolv.conf"
         if os.path.islink(resolv):
             os.remove(resolv)
+        lines = [
+            "# VWN DNS: утечка через DNS хостера заблокирована",
+            f"nameserver {primary_v4}",
+            f"nameserver {fallback_v4}",
+        ]
+        if primary_v6:
+            lines.append(f"nameserver {primary_v6}")
+        if fallback_v6:
+            lines.append(f"nameserver {fallback_v6}")
+        lines.append("options edns0 trust-ad timeout:1 attempts:1")
         with open(resolv, "w", encoding="utf-8") as fh:
-            fh.write(
-                "# VWN DNS: утечка через DNS хостера заблокирована\n"
-                f"nameserver {primary}\n"
-                f"nameserver {fallback}\n"
-                "options edns0 trust-ad timeout:1 attempts:1\n"
-            )
+            fh.write("\n".join(lines) + "\n")
         os.chmod(resolv, 0o644)
-        shell.run(["chattr", "+i", resolv], check=False)
+
     os.makedirs(os.path.dirname(marker), exist_ok=True)
     open(marker, "a").close()
 

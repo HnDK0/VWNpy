@@ -516,10 +516,11 @@ H4 = 4
 I1 = {_I1_VAL}
 I2 = {_I2_VAL}
 """
+    dns_v4 = config.vwn_conf_get("DNS_V4_PRIMARY") or "1.1.1.1"
     conf = f"""[Interface]
 PrivateKey = {private_key}
 Address = {ipv4}/32
-DNS = 1.1.1.1
+DNS = {dns_v4}
 MTU = 1280
 Table = off
 {obfuscation}
