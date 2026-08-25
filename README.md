@@ -8,7 +8,7 @@ CLI-панель управления Xray-стеком на Linux (Debian/Ubunt
 bash <(curl -sL https://github.com/HnDK0/VWNpy/raw/main/install.sh) --domain your.domain
 ```
 
-Свежий сервер Debian/Ubuntu — больше ничего не нужно. Скрипт сам установит python3, скачает wheel из GitHub Releases и запустит установку.
+Свежий сервер Debian/Ubuntu — больше ничего не нужно. Скрипт сам установит python3 и python3-venv, соберёт venv (на Debian 12 / Ubuntu 24.04 системный pip заблокирован PEP 668), поставит wheel туда и запустит установку.
 
 Или локально из репозитория:
 
