@@ -203,7 +203,7 @@ def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
                     "mode": mode,
                     "xmux": {
                         "maxConcurrency": {"from": 4, "to": 8},
-                        "maxConnections": 6,
+                        "maxConnections": {"from": 6, "to": 6},
                         "hMaxRequestTimes": {"from": 300, "to": 600},
                         "hMaxReusableSecs": {"from": 900, "to": 1800},
                     },
