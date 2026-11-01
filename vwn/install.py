@@ -144,6 +144,11 @@ def run_install(argv: "list | None" = None) -> None:
     shell.run_task("Установка Xray-core", system.install_xray)
 
     from vwn.modules.security import ufw_allow
+    from vwn.modules.security import _parse_ssh_port, change_ssh_port
+    if opts.ssh_port and opts.ssh_port != _parse_ssh_port():
+        shell.run_task("Смена SSH порта",
+                       lambda: change_ssh_port(opts.ssh_port))
+
     shell.run_task("UFW (брандмауэр): правила + включение",
                    lambda: _setup_ufw(ufw_allow))
 
