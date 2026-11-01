@@ -9,19 +9,17 @@ Modes:
 """
 
 import ipaddress
-import json
 import os
 import random
 import re
 import secrets
 import socket
-import subprocess
-import tempfile
 import threading
 import time
 from pathlib import Path
 
 from vwn.core import config, shell
+from vwn.core.validate import validate_domain
 
 # ── Paths ─────────────────────────────────────────────────────────
 XRAY_DIR = "/usr/local/etc/xray"
@@ -31,12 +29,21 @@ IPS_FILE = os.path.join(XRAY_DIR, "cdn_ips.txt")
 FOUND_FILE = os.path.join(XRAY_DIR, "cdn_found.txt")
 ACTIVE_IP_FILE = os.path.join(XRAY_DIR, "cdn_active_ip")
 
+def _conf_int(key: str, default: int) -> int:
+    """Число из vwn.conf; при мусоре/пустоте — default (не роняет сканер и вотчер)."""
+    try:
+        v = int(str(config.vwn_conf_get(key) or "").strip())
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
 def _connect_host_file() -> str:
     return os.path.join(XRAY_DIR, "connect_host")
 
 BLACKLIST_FILE = os.path.join(XRAY_DIR, "cdn_blacklist.txt")
-SCAN_LOCK = "/tmp/vwn-cdn-scan.lock"
-WATCH_LOCK = "/tmp/vwn-cdn-watch.lock"
+SCAN_LOCK = "/usr/local/etc/xray/.vwn-cdn-scan.lock"
+WATCH_LOCK = "/usr/local/etc/xray/.vwn-cdn-watch.lock"
 PING_CACHE = os.path.join(XRAY_DIR, "cdn_ping_cache")
 BETTER_COUNT_FILE = os.path.join(XRAY_DIR, "cdn_better_count")
 
@@ -173,7 +180,7 @@ def _write(path: str, content: str) -> None:
 
 def _try_lock(path: str) -> bool:
     try:
-        fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_EXCL)
+        fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
         os.write(fd, str(os.getpid()).encode())
         os.close(fd)
         return True
@@ -341,6 +348,13 @@ def find_best(mode: str, cur_ip: str = "") -> str | None:
 def apply_ip(ip: str) -> bool:
     if not ip:
         return False
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        try:
+            validate_domain(ip)
+        except ValueError:
+            return False
     cur = ""
     try:
         cur = Path(_connect_host_file()).read_text().strip()
@@ -367,7 +381,7 @@ def _scan_and_save(count: int = 200, workers: int = 40, timeout: int = 3,
     if not sample:
         return []
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
     results: list[tuple[float, str, str]] = []
     lock = threading.Lock()
     done = 0
@@ -391,9 +405,9 @@ def _scan_and_save(count: int = 200, workers: int = 40, timeout: int = 3,
 
 def scan(foreground: bool = False, count: int | None = None,
          workers: int | None = None, timeout: int | None = None) -> int:
-    count = count or int(config.vwn_conf_get("CDN_AUTOSCAN_COUNT") or "200")
-    workers = workers or int(config.vwn_conf_get("CDN_SCAN_PARALLEL") or "40")
-    timeout = timeout or int(config.vwn_conf_get("CDN_SCAN_TIMEOUT") or "3")
+    count = count or _conf_int("CDN_AUTOSCAN_COUNT", 200)
+    workers = workers or _conf_int("CDN_SCAN_PARALLEL", 40)
+    timeout = timeout or _conf_int("CDN_SCAN_TIMEOUT", 3)
     if not foreground:
         return _scan_bg(count, workers, timeout)
 
@@ -463,7 +477,7 @@ def watch() -> int:
                 apply_ip(best)
             return 0
 
-        cur_ms = ping(cur, int(config.vwn_conf_get("CDN_CHECK_TIMEOUT") or "5"))
+        cur_ms = ping(cur, _conf_int("CDN_CHECK_TIMEOUT", 5))
         _write(PING_CACHE, f"{cur_ms}\n")
 
         if cur_ms >= 9999:
@@ -476,8 +490,8 @@ def watch() -> int:
         if not candidates:
             return 0
 
-        to = int(config.vwn_conf_get("CDN_SCAN_TIMEOUT") or "3")
-        workers = int(config.vwn_conf_get("CDN_SCAN_PARALLEL") or "40")
+        to = _conf_int("CDN_SCAN_TIMEOUT", 3)
+        workers = _conf_int("CDN_SCAN_PARALLEL", 40)
         result = _scan_best(candidates, cur, timeout=to, workers=workers)
         if not result:
             return 0
@@ -487,7 +501,7 @@ def watch() -> int:
             return 0
 
         gain = cms - best_ms
-        threshold = int(config.vwn_conf_get("CDN_PING_THRESHOLD_MS") or "5")
+        threshold = _conf_int("CDN_PING_THRESHOLD_MS", 5)
         if gain < threshold:
             return 0
 
@@ -508,7 +522,7 @@ def watch() -> int:
         _write(BETTER_COUNT_FILE, f"{cnt}\n")
         _write(f"{BETTER_COUNT_FILE}.ip", f"{best_ip}\n")
 
-        confirm = int(config.vwn_conf_get("CDN_PING_CONFIRM_COUNT") or "2")
+        confirm = _conf_int("CDN_PING_CONFIRM_COUNT", 2)
         if cnt >= confirm:
             apply_ip(best_ip)
         return 0
@@ -601,6 +615,10 @@ def status() -> dict:
 # ── Blacklist ─────────────────────────────────────────────────────
 
 def blacklist_add(ip: str) -> None:
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise ValueError(f"Invalid IP: {ip!r}")
     with open(BLACKLIST_FILE, "a") as f:
         f.write(ip + "\n")
 
@@ -620,6 +638,7 @@ def domains_list() -> list[str]:
 
 
 def domains_add(domain: str) -> None:
+    validate_domain(domain)
     lines = _read_lines(DOMAINS_FILE)
     lines.append(domain)
     lines = sorted(set(lines))

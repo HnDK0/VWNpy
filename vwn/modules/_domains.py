@@ -2,6 +2,7 @@
 import json
 import os
 from vwn.core import shell
+from vwn.core.validate import validate_domain
 
 from vwn.modules._outbound import _paths
 
@@ -21,6 +22,7 @@ def list_domains(tag: str) -> list[str]:
 
 def add_domain(tag: str, domain: str, routing_tag: str | None = None) -> bool:
     """Добавить домен в список. Возвращает False если туннель в Global."""
+    validate_domain(domain)
     rt = routing_tag or tag
     rules = _read_routing_rules(rt)
     if _is_global(rules, rt):

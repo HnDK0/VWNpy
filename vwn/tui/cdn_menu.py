@@ -5,11 +5,21 @@ from vwn.core.color import console
 from vwn.tui.helpers import edit_list_in_editor, run_task, wait_key
 
 
+def _conf_int(key: str, default: int) -> int:
+    """Прочитать число из vwn.conf; при мусоре вернуть default (меню не падает)."""
+    try:
+        v = int(str(config.vwn_conf_get(key) or "").strip())
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
 def _cdn_menu_scanner_settings() -> None:
     keys = [("CDN_AUTOSCAN_COUNT", "Выборка (кол-во IP)"),
             ("CDN_SCAN_PARALLEL", "Воркеры"),
             ("CDN_SCAN_TIMEOUT", "Таймаут (сек)")]
-    vals = [config.vwn_conf_get(k) or d for (k, _), d in zip(keys, ["200", "40", "3"])]
+    defaults = [200, 40, 3]
+    vals = [str(_conf_int(k, d)) for (k, _), d in zip(keys, defaults)]
     while True:
         console.print("\n[bold]Настройки сканера[/]")
         for i, ((k, label), v) in enumerate(zip(keys, vals), 1):
@@ -21,15 +31,19 @@ def _cdn_menu_scanner_settings() -> None:
         if val.isdigit() and 1 <= int(val) <= len(keys):
             i = int(val) - 1
             new_v = input(f"  {keys[i][1]} [{vals[i]}]: ").strip()
-            if new_v:
-                config.vwn_conf_set(keys[i][0], new_v)
-                vals[i] = new_v
-                console.print(f"  [bright_green]Сохранено[/]")
+            if not new_v:
+                continue
+            if not (new_v.isdigit() and 1 <= int(new_v) <= 100000):
+                console.print("  [red]Нужно целое число от 1 до 100000[/]")
+                continue
+            config.vwn_conf_set(keys[i][0], str(int(new_v)))
+            vals[i] = str(int(new_v))
+            console.print("  [bright_green]Сохранено[/]")
 
 
 def manage_cdn() -> None:
-    from vwn.modules.cdn import (status, set_mode, scan, scan_status, scan_stop,
-                                  find_best, apply_ip, check_ip, ping,
+    from vwn.modules.cdn import (status, set_mode, scan,
+                                  find_best, apply_ip, ping,
                                   blacklist_add, blacklist_list, blacklist_clear,
                                   domains_list, domains_add, domains_remove,
                                   init_sources, install_watcher, remove_watcher)
@@ -40,10 +54,10 @@ def manage_cdn() -> None:
         ip_str = s["ip"] or "нет"
         ping_str = f" ({s['ping_ms']}ms)" if s["ping_ms"] else ""
         w_str = "[bright_green]вкл[/]" if s["watcher"] else "[red]выкл[/]"
-        cnt = int(config.vwn_conf_get("CDN_AUTOSCAN_COUNT") or "200")
-        wk = int(config.vwn_conf_get("CDN_SCAN_PARALLEL") or "40")
-        to = int(config.vwn_conf_get("CDN_SCAN_TIMEOUT") or "3")
-        console.print(f"\n[bold]CDN[/]")
+        cnt = _conf_int("CDN_AUTOSCAN_COUNT", 200)
+        wk = _conf_int("CDN_SCAN_PARALLEL", 40)
+        to = _conf_int("CDN_SCAN_TIMEOUT", 3)
+        console.print("\n[bold]CDN[/]")
         console.print(f"  Режим: {mode_str}  |  Активный IP: {ip_str}{ping_str}")
         console.print(f"  Вотчер: {w_str}  |  Кэш: {s['found_count']} IP  |  Скан: {cnt}×{wk}w/{to}s")
         console.print("  1. Выключить (основной домен)")
@@ -79,7 +93,7 @@ def manage_cdn() -> None:
         elif val == "5":
             run_task("Сканирование", lambda: scan(foreground=True))
         elif val == "6":
-            ip = find_best(config.vwn_conf_get("CDN_MODE", ""))
+            ip = find_best((config.vwn_conf_get("CDN_MODE") or ""))
             if ip:
                 run_task("Применить лучший", lambda: apply_ip(ip))
             else:
@@ -104,7 +118,7 @@ def manage_cdn() -> None:
             ip = s["ip"]
             if ip:
                 run_task("Чёрный список", lambda: blacklist_add(ip))
-                best = find_best(config.vwn_conf_get("CDN_MODE", ""), ip)
+                best = find_best((config.vwn_conf_get("CDN_MODE") or ""), ip)
                 if best:
                     run_task("Применение нового IP", lambda: apply_ip(best))
                 else:
@@ -128,7 +142,10 @@ def manage_cdn() -> None:
             ip = input("  IP для проверки: ").strip()
             if ip:
                 ms = ping(ip)
-                console.print(f"  {'[bright_green]ДОСТУПЕН' if ms < 9999 else '[red]ОШИБКА'} ({ms}ms)" if ms < 9999 else "  [red]Недоступен[/]")
+                if ms < 9999:
+                    console.print(f"  [bright_green]ДОСТУПЕН[/] ({ms}ms)")
+                else:
+                    console.print("  [red]Недоступен[/]")
         elif val == "14":
             _cdn_menu_scanner_settings()
         elif val == "15":

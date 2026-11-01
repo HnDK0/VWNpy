@@ -135,8 +135,47 @@ def pick_country(countries: list[tuple[str, str]]) -> str:
     if cn.isdigit() and 1 <= int(cn) <= len(countries):
         country = countries[int(cn) - 1][0]
     elif cn:
-        country = cn.upper()[:2]
+        import re
+        if re.fullmatch(r"[A-Za-z]{2}", cn) and cn.upper() in {c[0] for c in countries}:
+            country = cn.upper()
+        else:
+            console.print("[red]Invalid country code[/]")
+            print("Invalid country code")
+            return ""
     return country
+
+
+def ensure_working_country(name: str, countries: list[tuple[str, str]], port: int,
+                           apply_fn, current: str, timeout: int = 30) -> str:
+    """Пингануть туннель; если за timeout секунд не ответил — предложить другую страну.
+
+    Достаточно одного успешного пинга. Во время ожидания виден спиннер и счётчик,
+    отменить можно в любой момент: Enter или Ctrl+C. current — уже применённая
+    страна; apply_fn(country) применяет новую. Возвращает итоговую страну ('' = авто).
+    """
+    from vwn.modules.tunnel_probe import enter_pressed, wait_alive
+    country = current
+    while True:
+        label = country or "авто"
+        console.print(f"\n  Проверка {name} (страна: {label}) — Enter или Ctrl+C: отмена")
+        with console.status(f"{name}: подключаемся…", spinner="dots") as st:
+            res = wait_alive(port, timeout=timeout, progress=st.update,
+                             should_stop=enter_pressed)
+        if res.alive:
+            console.print(f"  [bright_green]{name} жив[/]: ответ за {res.latency_ms} мс "
+                          f"(через {res.elapsed:.0f} с)")
+            return country
+        if res.cancelled:
+            console.print(f"  [yellow]Проверка прервана[/] через {res.elapsed:.0f} с "
+                          f"(страна: {label}, туннель пока не ответил)")
+        else:
+            console.print(f"  [red]{name} не отвечает[/] {timeout} с (страна: {label})")
+        console.print("  Enter — выбрать другую страну, 1 — оставить эту, 0 — отмена")
+        ans = input("> ").strip()
+        if ans in ("1", "0"):
+            return country
+        country = pick_country(countries)
+        run_task(f"Применение страны {country or 'авто'}", lambda c=country: apply_fn(c))
 
 
 def add_domain_flow(tag: str) -> None:

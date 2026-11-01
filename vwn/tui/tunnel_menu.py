@@ -7,7 +7,8 @@ import os
 from vwn.core import config, shell
 from vwn.core.color import console
 from vwn.modules.tunnels import _is_any_tunnel_tag, insert_before_catchall
-from vwn.tui.helpers import pick_country, restart_xray_services, run_cmd, run_task, wait_key
+from vwn.tui.helpers import (ensure_working_country, pick_country, restart_xray_services,
+                             run_cmd, run_task, wait_key)
 
 
 def _switch_tunnel_mode(tag: str, mode: str) -> str:
@@ -132,15 +133,17 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                 console.print("    2. Warp   — Psiphon поверх WARP")
                 tm = input("> ").strip()
                 tmode = "warp" if tm == "2" else "plain"
-                from vwn.modules.psiphon import install as ps_install
+                from vwn.modules.psiphon import PORT as PS_PORT, change_country as ps_cc, install as ps_install
                 run_task("Установка Psiphon",
                           lambda: ps_install(country, tmode))
+                ensure_working_country("Psiphon", PS_COUNTRIES, PS_PORT, ps_cc, country, timeout=60)
             elif tag == "tor":
                 from vwn.modules.tor import COUNTRIES as TOR_COUNTRIES
                 country = pick_country(TOR_COUNTRIES)
-                from vwn.modules.tor import install as tor_install
+                from vwn.modules.tor import PORT as TOR_PORT, change_country as tor_cc, install as tor_install
                 run_task("Установка Tor",
                           lambda: tor_install(country))
+                ensure_working_country("Tor", TOR_COUNTRIES, TOR_PORT, tor_cc, country, timeout=60)
             wait_key()
         elif has_install and val == "2":
             if tag == "warp":

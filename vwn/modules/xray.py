@@ -39,7 +39,11 @@ def _dns() -> dict:
     v4_primary = config.vwn_conf_get("DNS_V4_PRIMARY") or "1.1.1.1"
     v4_fallback = config.vwn_conf_get("DNS_V4_FALLBACK") or "9.9.9.9"
     v6_primary = config.vwn_conf_get("DNS_V6_PRIMARY") or ""
-    servers = ["127.0.0.53", v4_primary, v4_fallback]
+    # 127.0.0.53 добавляем только если там реально слушает резолвер, иначе xray
+    # теряет секунды на каждый новый домен (клиентский пинг показывает «мёртв»).
+    servers = [v4_primary, v4_fallback]
+    if system.local_resolver_active():
+        servers.insert(0, "127.0.0.53")
     if v6_primary:
         servers.append(v6_primary)
         query_strategy = "UseIP"
@@ -62,10 +66,12 @@ def _outbounds() -> list:
 
 
 def _routing_base() -> dict:
+    rules = []
+    if system.local_resolver_active():
+        rules.append({"type": "field", "ip": ["127.0.0.53"], "outboundTag": "dns-out"})
     return {
         "domainStrategy": "AsIs",
-        "rules": [
-            {"type": "field", "ip": ["127.0.0.53"], "outboundTag": "dns-out"},
+        "rules": rules + [
             {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
             {"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
             {"type": "field", "port": "25, 587, 465, 2525", "network": "tcp",
@@ -379,6 +385,8 @@ def set_xhttp_mode(mode: str) -> None:
 
 def write_nginx_loopback_config(template: str, output: str, **kw) -> None:
     os.makedirs(os.path.dirname(output), exist_ok=True)
+    # 127.0.0.53 в resolver nginx — только если там реально слушает резолвер
+    kw.setdefault("RESOLVER", "127.0.0.53 1.1.1.1" if system.local_resolver_active() else "1.1.1.1 9.9.9.9")
     render.render_config(template, output, kw)
 
 

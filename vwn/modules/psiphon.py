@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import re
 import time
 
 from vwn.core import config, shell
@@ -77,6 +78,8 @@ def _bin_url() -> str:
 
 
 def _write_config(country: str = "", upstream: str = "") -> None:
+    if country and not re.fullmatch(r"[A-Z]{2}", country):
+        raise ValueError(f"Invalid country code: {country!r}")
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
     cfg = {
         "PropagationChannelId": "FFFFFFFFFFFFFFFF",
@@ -137,7 +140,7 @@ WantedBy=multi-user.target
     shell.run(["systemctl", "enable", "psiphon"], check=False)
     shell.run(["systemctl", "restart", "psiphon"], check=False)
     for _ in range(6):
-        if shell.run(["sh", "-c", f"ss -tlnp | grep -q :{PORT}"], check=False).returncode == 0:
+        if shell.port_listening(PORT):
             break
         time.sleep(2)
 
@@ -159,6 +162,17 @@ def install(country: str = "", tunnel_mode: str = "plain") -> None:
     for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
         shell.run(["systemctl", "restart", svc], check=False)
     time.sleep(3)
+
+
+def change_country(country: str) -> None:
+    """Сменить страну выхода и перезапустить Psiphon (режим plain/warp сохраняется)."""
+    mode = "plain"
+    if os.path.isfile(MODE_FILE):
+        with open(MODE_FILE) as f:
+            mode = f.read().strip() or "plain"
+    upstream = "socks5://127.0.0.1:40000" if mode == "warp" else ""
+    _write_config(country, upstream)
+    shell.run(["systemctl", "restart", "psiphon"], check=False)
 
 
 def remove() -> None:

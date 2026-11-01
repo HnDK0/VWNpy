@@ -482,6 +482,29 @@ def _pick_best_dns() -> tuple[list[str], list[str]]:
     return v4_best, v6_best
 
 
+def local_resolver_active() -> bool:
+    """True, если на 127.0.0.53:53 реально отвечает локальный резолвер (systemd-resolved).
+
+    Проверяем настоящим UDP-запросом, а не наличием бинарника: на Ubuntu 24.04
+    systemd-resolved может быть установлен, но выключен (disabled/inactive).
+    """
+    query = (b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+             b"\x07example\x03com\x00\x00\x01\x00\x01")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(1.0)
+            s.connect(("127.0.0.53", 53))
+            s.send(query)
+            return len(s.recv(512)) > 0
+    except OSError:
+        return False
+
+
+def _resolved_active() -> bool:
+    return shell.run(["systemctl", "is-active", "--quiet", "systemd-resolved"],
+                     check=False).returncode == 0
+
+
 def setup_system_dns() -> None:
     """Настроить системный DNS (приватные, без логов), поддержка IPv4+IPv6."""
     marker = "/usr/local/etc/xray/.dns_configured"
@@ -502,8 +525,10 @@ def setup_system_dns() -> None:
         fallback_v6 = v6_list[1] if len(v6_list) > 1 else ""
 
     # systemd-resolved
-    if shutil.which("systemd-resolve") or os.path.isfile("/run/systemd/resolve/stub-resolv.conf") \
-            or shell.run(["systemctl", "is-active", "--quiet", "systemd-resolved"], check=False).returncode == 0:
+    # Ветку resolved выбираем только если сервис реально активен. Раньше хватало
+    # наличия бинарника/stub-файла, и при выключенном resolved xray получал
+    # 127.0.0.53 первым DNS-сервером, на котором никто не слушает.
+    if _resolved_active():
         os.makedirs("/etc/systemd/resolved.conf.d", exist_ok=True)
         dns_line = f"DNS={primary_v4}"
         if primary_v6:

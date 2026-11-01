@@ -12,3 +12,5 @@ build/
 Thumbs.db
 *.log
 *.tmp
+/.context
+uv.lock

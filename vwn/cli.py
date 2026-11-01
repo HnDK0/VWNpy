@@ -36,7 +36,17 @@ def status():
 def menu():
     """Интерактивное TUI-меню (Rich)."""
     from vwn.tui.menu import run_menu
-    run_menu()
+    try:
+        run_menu()
+    except (KeyboardInterrupt, EOFError):
+        click.echo()
+
+
+@cli.command(name="cdn-watch")
+def cdn_watch():
+    """Один проход CDN-вотчера (вызывается таймером vwn-cdn-watch)."""
+    from vwn.modules.cdn import watch
+    sys.exit(watch())
 
 
 @cli.command()
@@ -46,7 +56,7 @@ def qr(type):
     """Показать QR-код первого конфига (Reality, WS или XHTTP)."""
     from vwn.core import config as vwn_cfg
     from vwn.modules import sub
-    import subprocess, sys
+    import subprocess
 
     from vwn.modules.users import list_users, init_users_file, get_config_name
     init_users_file()

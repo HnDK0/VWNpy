@@ -4,7 +4,9 @@ import os
 import re
 import shlex
 import subprocess
+import socket
 import sys
+from typing import NoReturn
 
 from vwn.core.color import C, console, _err
 
@@ -69,10 +71,20 @@ def run_task(desc: str, func, *args, **kw) -> bool:
     return True
 
 
+
+def port_listening(port: int, host: str = "127.0.0.1", timeout: int = 2) -> bool:
+    """Проверить, слушает ли порт (Python socket, без sh -c)."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, socket.timeout):
+        return False
+
+
 def is_root() -> bool:
     return os.geteuid() == 0
 
 
-def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
+def die(msg: str) -> NoReturn:
     _err.print(f"{C['red']}ОШИБКА: {msg}{C['reset']}")
     sys.exit(1)

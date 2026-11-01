@@ -1,4 +1,5 @@
 import os
+import re
 import time
 
 from vwn.core import shell
@@ -70,19 +71,20 @@ def _install_direct():
 
 
 def install(country: str = "") -> None:
-    if shell.run(["which", "tor"], capture=True, check=False).stdout.strip():
-        return
-    _add_official_repo()
-    r = _runcmd(["apt-get", "install", "-y", "tor", "deb.torproject.org-keyring"],
-                 check=False, timeout=180)
-    if r.returncode != 0:
-        _install_direct()
-    _runcmd(["apt-get", "install", "-y", "tor-geoipdb"], check=False)
+    # Если tor уже стоит — пакеты не ставим, но страну и конфиг всё равно применяем
+    # (раньше при повторной «Установке» выбранная страна молча игнорировалась).
+    if not shell.run(["which", "tor"], capture=True, check=False).stdout.strip():
+        _add_official_repo()
+        r = _runcmd(["apt-get", "install", "-y", "tor", "deb.torproject.org-keyring"],
+                    check=False, timeout=180)
+        if r.returncode != 0:
+            _install_direct()
+        _runcmd(["apt-get", "install", "-y", "tor-geoipdb"], check=False)
     _write_config(country)
     _runcmd(["systemctl", "enable", "tor"])
     _runcmd(["systemctl", "restart", "tor"])
     for _ in range(6):
-        if _runcmd(["sh", "-c", f"ss -tlnp | grep -q :{PORT}"], check=False).returncode == 0:
+        if shell.port_listening(PORT):
             break
         time.sleep(2)
     add_outbound(TAG, "socks", PORT)
@@ -191,6 +193,11 @@ def add_bridges(bridge_type: str, bridges: list[str]) -> bool:
         _runcmd(["apt-get", "install", "-y", "snowflake-client"], check=False)
     if not bridges:
         return False
+    for b in bridges:
+        if not b.strip() or "\n" in b or "\r" in b:
+            raise ValueError(f"Invalid bridge line: {b!r}")
+        if b.lstrip().startswith(("Bridge ", "ExitNodes", "UseBridges", "ClientTransportPlugin")):
+            raise ValueError(f"Invalid bridge line: {b!r}")
     lines = [l for l in open(CONFIG).read().splitlines()
              if not l.startswith(("UseBridges", "ClientTransportPlugin", "Bridge "))]
     lines.append("UseBridges 1")
@@ -343,6 +350,8 @@ def reapply_routing() -> None:
 
 
 def _write_config(country: str) -> None:
+    if country and not re.fullmatch(r"[A-Z]{2}", country):
+        raise ValueError(f"Invalid country code: {country!r}")
     with open(CONFIG, "w") as f:
         f.write(f"SocksPort 127.0.0.1:{PORT}\n")
         f.write(f"ControlPort 127.0.0.1:{CONTROL_PORT}\n")
