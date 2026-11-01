@@ -302,6 +302,11 @@ def install_xray() -> None:
     `vwn update-xray` ничего не делал).
     """
     _create_xray_user()
+    # Остановить работающие экземпляры перед заменой бинаря (иначе ETXTBSY)
+    for _svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+        if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
+            shell.run(["systemctl", "stop", _svc], check=False)
+
     tag = _xray_arch_tag(platform.machine())
     if not tag:
         shell.die(f"Неподдерживаемая архитектура: {platform.machine()}")
@@ -318,12 +323,31 @@ def install_xray() -> None:
         if not (os.path.isfile(bin_src) and os.path.getsize(bin_src) > 0):
             shell.die("не удалось извлечь бинарь xray")
         os.makedirs(os.path.dirname(config.XRAY_BIN), exist_ok=True)
+        # Если бинарь занят (ETXTBSY), переименовываем старый и копируем новый
+        _old_bin = config.XRAY_BIN + ".old"
+        try:
+            if os.path.exists(config.XRAY_BIN):
+                if os.path.exists(_old_bin):
+                    os.remove(_old_bin)
+                os.replace(config.XRAY_BIN, _old_bin)
+        except OSError:
+            pass
         shutil.copy(bin_src, config.XRAY_BIN)
         os.chmod(config.XRAY_BIN, 0o755)
+        try:
+            if os.path.exists(_old_bin):
+                os.remove(_old_bin)
+        except OSError:
+            pass
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if not shutil.which("xray"):
         shell.die("xray не установился")
+    # Перезапустить юниты, чтобы подхватить новый бинарь
+    for _svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+        if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
+            shell.run(["systemctl", "daemon-reload"], check=False)
+            shell.run(["systemctl", "restart", _svc], check=False)
     # geo-базы качаем всегда (idempotent; нужны для routing)
     _install_geo_databases()
     # лог-директория для xray (конфиги пишут в /var/log/xray/*.log)
