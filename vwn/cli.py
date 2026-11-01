@@ -163,6 +163,9 @@ def update_xray():
     from vwn.core.system import install_xray
     click.echo("Обновление Xray-core...")
     install_xray()
+    import subprocess
+    for svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+        subprocess.run(["systemctl", "restart", svc], check=False)
     click.echo("Готово.")
 
 

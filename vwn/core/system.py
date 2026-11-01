@@ -295,33 +295,35 @@ def _install_geo_databases() -> None:
 
 
 def install_xray() -> None:
-    """Поставить бинарь Xray-core + geo-базы (как fallback в оригинале)."""
+    """Поставить/обновить бинарь Xray-core + geo-базы.
+
+    Бинарь качается и перезаписывается всегда — и при первой установке,
+    и при обновлении (раньше при наличии xray пропускали, из-за чего
+    `vwn update-xray` ничего не делал).
+    """
+    _create_xray_user()
+    tag = _xray_arch_tag(platform.machine())
+    if not tag:
+        shell.die(f"Неподдерживаемая архитектура: {platform.machine()}")
+    tmp = tempfile.mkdtemp(prefix="xray-")
+    try:
+        zip_url = (f"https://github.com/XTLS/Xray-core/releases/latest/"
+                   f"download/Xray-linux-{tag}.zip")
+        zip_path = os.path.join(tmp, "xray.zip")
+        shell.run(["curl", "-fL", "--connect-timeout", "30", "--retry", "2",
+                   zip_url, "-o", zip_path], check=True)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(tmp)
+        bin_src = os.path.join(tmp, "xray")
+        if not (os.path.isfile(bin_src) and os.path.getsize(bin_src) > 0):
+            shell.die("не удалось извлечь бинарь xray")
+        os.makedirs(os.path.dirname(config.XRAY_BIN), exist_ok=True)
+        shutil.copy(bin_src, config.XRAY_BIN)
+        os.chmod(config.XRAY_BIN, 0o755)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     if not shutil.which("xray"):
-        _create_xray_user()
-        tag = _xray_arch_tag(platform.machine())
-        if not tag:
-            shell.die(f"Неподдерживаемая архитектура: {platform.machine()}")
-        tmp = tempfile.mkdtemp(prefix="xray-")
-        try:
-            zip_url = (f"https://github.com/XTLS/Xray-core/releases/latest/"
-                       f"download/Xray-linux-{tag}.zip")
-            zip_path = os.path.join(tmp, "xray.zip")
-            shell.run(["curl", "-fL", "--connect-timeout", "30", "--retry", "2",
-                       zip_url, "-o", zip_path], check=True)
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(tmp)
-            bin_src = os.path.join(tmp, "xray")
-            if not (os.path.isfile(bin_src) and os.path.getsize(bin_src) > 0):
-                shell.die("не удалось извлечь бинарь xray")
-            os.makedirs(os.path.dirname(config.XRAY_BIN), exist_ok=True)
-            shutil.copy(bin_src, config.XRAY_BIN)
-            os.chmod(config.XRAY_BIN, 0o755)
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-        if not shutil.which("xray"):
-            shell.die("xray не установился")
-    else:
-        print("info: xray уже установлен, пропускаем бинарь")
+        shell.die("xray не установился")
     # geo-базы качаем всегда (idempotent; нужны для routing)
     _install_geo_databases()
     # лог-директория для xray (конфиги пишут в /var/log/xray/*.log)
