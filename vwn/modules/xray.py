@@ -30,6 +30,7 @@ def _sockopt() -> dict:
         "tcpKeepAliveIdle": 60,
         "tcpKeepAliveInterval": 10,
         "tcpCongestion": "bbr",
+        "tcpMptcp": False,
     }
 
 
@@ -133,7 +134,7 @@ def reality_config(uuid: str, server_name: str,
             "settings": {
                 "clients": [{
                     "id": uuid, "flow": "xtls-rprx-vision", "email": "default",
-                    "minClientVer": "1.0.0", "maxClientVer": "99.99.99",
+                    "minClientVer": "", "maxClientVer": "",
                 }],
                 "decryption": "none",
             },
@@ -197,7 +198,16 @@ def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
             "streamSettings": {
                 "network": "xhttp",
                 "security": "none",
-                "xhttpSettings": {"path": xhttp_path, "mode": mode},
+                "xhttpSettings": {
+                    "path": xhttp_path,
+                    "mode": mode,
+                    "xmux": {
+                        "maxConcurrency": {"from": 4, "to": 8},
+                        "maxConnections": 6,
+                        "hMaxRequestTimes": {"from": 300, "to": 600},
+                        "hMaxReusableSecs": {"from": 900, "to": 1800},
+                    },
+                },
                 "sockopt": _sockopt(),
             },
             "sniffing": _SNIFFING,

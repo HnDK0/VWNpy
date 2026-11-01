@@ -35,6 +35,9 @@ def test_reality_config_shape():
     # Fallback dest → nginx loopback
     assert ib["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"
     assert ib["streamSettings"]["realitySettings"]["serverNames"] == ["vpn.example.com"]
+    # min/max client ver очищены (любая версия клиента)
+    assert ib["settings"]["clients"][0].get("minClientVer") == ""
+    assert ib["settings"]["clients"][0].get("maxClientVer") == ""
     assert c["outbounds"][-1]["protocol"] == "blackhole"   # общие outbounds
     tags = [o["tag"] for o in c["outbounds"]]
     assert "dns-out" in tags
@@ -44,6 +47,7 @@ def test_reality_config_shape():
     assert "warp-svc" not in tags
     assert ib["sniffing"]["routeOnly"] is True
     assert ib["streamSettings"]["sockopt"]["tcpCongestion"] == "bbr"
+    assert ib["streamSettings"]["sockopt"]["tcpMptcp"] is False
 
 
 def test_ws_config_shape():
@@ -55,6 +59,7 @@ def test_ws_config_shape():
     assert ib["streamSettings"]["wsSettings"]["path"] == "/v2/api/abc"
     assert ib["streamSettings"]["wsSettings"]["host"] == "vpn.example.com"
     assert ib["streamSettings"]["sockopt"]["tcpCongestion"] == "bbr"
+    assert ib["streamSettings"]["sockopt"]["tcpMptcp"] is False
     assert ib["sniffing"]["routeOnly"] is True
 
 
@@ -64,6 +69,7 @@ def test_xhttp_config_shape():
     assert ib["port"] == 50002
     assert ib["streamSettings"]["network"] == "xhttp"
     assert ib["streamSettings"]["xhttpSettings"]["mode"] == "stream"
+    assert "xmux" in ib["streamSettings"]["xhttpSettings"]
 
 
 def test_provision_writes_valid_configs(paths):

@@ -32,7 +32,7 @@ def generate_reality_url(
     base = (
         f"vless://{uuid_val}@{server_ip}:{port}"
         f"?encryption=none&security=reality"
-        f"&sni={dest_host}&fp=chrome&pbk={pub_key}&sid={short_id}"
+        f"&sni={dest_host}&fp=chrome&pbk={pub_key}&sid={short_id}&support-x25519mlkem768=true"
     )
     if mode == "xhttp":
         path = xhttp_path or "/r"

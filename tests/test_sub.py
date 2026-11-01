@@ -35,6 +35,7 @@ def test_generate_reality_url():
     assert "sni=microsoft.com" in url
     assert "pbk=pub-key" in url
     assert "sid=abc" in url
+    assert "support-x25519mlkem768=true" in url
     assert "flow=xtls-rprx-vision" in url
     assert "Reality" in url
 
