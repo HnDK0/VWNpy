@@ -165,6 +165,74 @@ vwn close-80               Закрыть порт 80 в UFW (хук acme.sh)
 | `vwn.modules.diag` | Диагностика |
 | `vwn.tui.menu` | Rich TUI (15 подменю) |
 
+## Конфиги и пути
+
+<details>
+<summary>VWN / Xray — <code>/usr/local/etc/xray/</code></summary>
+
+| Путь | Назначение |
+|------|-----------|
+| `/usr/local/etc/xray/vwn.conf` | главный конфиг VWN (ключ=значение, chmod 600) |
+| `/usr/local/etc/xray/users.conf` | пользователи: `UUID\|label\|token` |
+| `/usr/local/etc/xray/xray-reality.json` | конфиг Xray Reality (443) |
+| `/usr/local/etc/xray/grpc.json` | конфиг Xray gRPC (50001) |
+| `/usr/local/etc/xray/xhttp.json` | конфиг Xray XHTTP (50002) |
+| `/usr/local/etc/xray/sub/` | подписки: `.txt` (base64) + `.html` (QR) |
+| `/usr/local/etc/xray/connect_host` | хост подключения |
+| `/usr/local/etc/xray/relay.json`, `relay.conf` | relay-туннель |
+| `/usr/local/etc/xray/psiphon.json`, `psiphon_config.json`, `psiphon_country`, `psiphon_mode` | Psiphon |
+| `/usr/local/etc/xray/tor_domains.txt` | домены Tor (split) |
+| `/usr/local/etc/xray/.dns_configured` | маркер настройки DNS |
+
+</details>
+
+<details>
+<summary>Nginx — <code>/etc/nginx/</code></summary>
+
+| Путь | Назначение |
+|------|-----------|
+| `/etc/nginx/nginx.conf` | основной конфиг nginx |
+| `/etc/nginx/conf.d/xray.conf` | loopback: gRPC / XHTTP / sub |
+| `/etc/nginx/conf.d/sub_map.conf` | маппинг подписок |
+| `/etc/nginx/cert/` | сертификаты TLS |
+
+</details>
+
+<details>
+<summary>Systemd — <code>/etc/systemd/</code></summary>
+
+| Путь | Назначение |
+|------|-----------|
+| `/etc/systemd/system/xray-reality.service` (+ `.d/cpuguard.conf`, `no-journal.conf`) | сервис Reality |
+| `/etc/systemd/system/xray-grpc.service` | сервис gRPC |
+| `/etc/systemd/system/xray-xhttp.service` | сервис XHTTP |
+| `/etc/systemd/system/nginx.service` | nginx |
+| `/etc/systemd/system/psiphon.service` | Psiphon |
+| `/etc/systemd/system/vwn-cdn-watch.service` / `.timer` | CDN watchdog |
+| `/etc/systemd/system/var-log-xray.mount` | монтирование логов Xray |
+| `/etc/systemd/system/user.slice.d/cpuguard.conf` | CPU Guard для юзер-слайса |
+| `/etc/systemd/resolved.conf.d/99-vwn-dns.conf` | DNS-резолвер |
+
+</details>
+
+<details>
+<summary>Безопасность / система</summary>
+
+| Путь | Назначение |
+|------|-----------|
+| `/etc/fail2ban/jail.local` | Fail2Ban jail |
+| `/etc/fail2ban/filter.d/nginx-probe.conf` | фильтр nginx-probe |
+| `/etc/sysctl.d/99-vwn-ipv6.conf` | отключение IPv6 |
+| `/etc/sysctl.conf` | BBR и прочие sysctl |
+| `/etc/ssh/sshd_config` | SSH (порт) |
+| `/etc/logrotate.d/xray` | ротация логов Xray |
+| `/etc/cron.d/acme-renew`, `clear-logs` | cron-задачи |
+| `/etc/tor/torrc` | Tor |
+| `/etc/vwn/warp-keys.env` | ключи WARP |
+| `/root/vwn_backups/` | резервные копии |
+
+</details>
+
 ## Тесты
 
 ```bash
