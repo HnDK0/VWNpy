@@ -36,7 +36,10 @@ def generate_reality_url(
     )
     if mode == "xhttp":
         path = xhttp_path or "/r"
-        extra = f"&path={_urlencode(path)}&mode={xhttp_extra or 'auto'}&host={dest_host}"
+        # клиентский auto с Reality ломается в новых Xray (#5635); серверный
+        # auto принимает stream-one, поэтому указываем его явно.
+        rmode = xhttp_extra if xhttp_extra and xhttp_extra != "auto" else "stream-one"
+        extra = f"&path={_urlencode(path)}&mode={rmode}&host={dest_host}"
         return f"{base}&type=xhttp{extra}#{_urlencode(name)}"
     return f"{base}&type=tcp&flow=xtls-rprx-vision#{_urlencode(name)}"
 
@@ -71,7 +74,7 @@ def generate_xhttp_url(
     encoded_path = _urlencode(xhttp_path)
     return (
         f"vless://{uuid_val}@{connect_host}:{port}"
-        f"?security=tls&type=xhttp&path={encoded_path}"
+        f"?encryption=none&security=tls&type=xhttp&path={encoded_path}"
         f"&mode={mode}&alpn=h2&host={domain}&sni={domain}"
         f"&fp=chrome"
         f"#{_urlencode(name)}"

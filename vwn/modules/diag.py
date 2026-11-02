@@ -179,6 +179,45 @@ def _diag_xray_test() -> None:
     console.print()
 
 
+def _diag_transports() -> None:
+    """Проверка связки nginx→xray для WS/XHTTP и совместимости sockopt с ядром."""
+    domain = config.vwn_conf_get("DOMAIN") or ""
+    if not domain:
+        console.print(f"  {_skip('нет DOMAIN — пропуск')}")
+        return
+    port = str(config.NGINX_LOOPBACK_PORT)
+    ws = config.vwn_conf_get("WS_PATH") or "/ws"
+    xh = config.vwn_conf_get("XHTTP_PATH") or "/xhttp"
+    resolve = f"{domain}:{port}:127.0.0.1"
+
+    cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control"
+    cc = open(cc_path).read().split() if os.path.exists(cc_path) else []
+    rp = os.path.join(config.XRAY_DIR, "xray-reality.json")
+    rcfg = open(rp).read() if os.path.exists(rp) else ""
+    if '"tcpCongestion"' in rcfg and "bbr" not in cc:
+        console.print(f"  BBR: {_fail('в конфиге есть, в ядре нет', '→ vwn rebuild')}")
+    else:
+        console.print(f"  BBR/sockopt: {_ok('OK')}")
+
+    def _code(args: list) -> str:
+        r = shell.run(["curl", "-sk", "-o", "/dev/null", "-m", "8", "-w", "%{http_code}",
+                       "--resolve", resolve, *args],
+                      check=False, capture=True, timeout=12)
+        return (r.stdout or "").strip()
+
+    c = _code(["--http1.1", "-H", "Upgrade: websocket", "-H", "Connection: Upgrade",
+               "-H", "Sec-WebSocket-Version: 13",
+               "-H", "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==",
+               f"https://{domain}:{port}{ws}"])
+    console.print(f"  WS (nginx→xray):   "
+                  + (_ok(c) if c == "101" else _fail(c or "нет ответа", "ожидается 101")))
+
+    c = _code(["--http2", f"https://{domain}:{port}{xh}/"])
+    bad = c in ("", "000", "502", "503", "504")
+    console.print(f"  XHTTP (grpc_pass): "
+                  + (_fail(c or "нет ответа", "upstream недоступен") if bad else _ok(c)))
+
+
 def _diag_nginx_test() -> None:
     console.print("--- Nginx Config Test ---")
     r = shell.run(["nginx", "-t"], capture=True, check=False, timeout=5)
@@ -213,6 +252,10 @@ def run_full_diag() -> None:
     from vwn.modules.relay import status as _relay_status
     rs = _relay_status()
     console.print(f"  {'Relay':16} {_ok('ON') if rs.get('configured') else _fail('OFF')}")
+    console.print()
+
+    console.print("--- Transports ---")
+    _diag_transports()
     console.print()
 
     console.print("--- Certificate ---")

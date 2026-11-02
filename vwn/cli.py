@@ -33,6 +33,20 @@ def status():
 
 
 @cli.command()
+@click.argument("out", required=False)
+def report(out):
+    """Собрать диагностику сервера в файл (секреты маскируются).
+
+    Для разбора проблем WS/XHTTP: версии, ядро/BBR, сервисы, конфиги,
+    проверки цепочки xray→nginx→443, DNS/исходящая сеть, логи.
+    """
+    import os
+    import subprocess
+    script = os.path.join(os.path.dirname(__file__), "data", "collect_report.sh")
+    sys.exit(subprocess.call(["bash", script] + ([out] if out else [])))
+
+
+@cli.command()
 def menu():
     """Интерактивное TUI-меню (Rich)."""
     from vwn.tui.menu import run_menu

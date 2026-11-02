@@ -22,4 +22,4 @@ test = ["pytest"]
 packages = ["vwn", "vwn.core", "vwn.modules", "vwn.tui", "vwn.data"]
 
 [tool.setuptools.package-data]
-"vwn.data" = ["*.conf", "*.html"]
+"vwn.data" = ["*.conf", "*.html", "*.sh"]

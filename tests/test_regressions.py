@@ -9,28 +9,25 @@ from vwn.core import config, system
 from vwn.modules import xray
 
 
-# ── DNS: 127.0.0.53 только при живом резолвере ─────────────────────
+# ── DNS: локальный резолвер 127.0.0.53 в Xray не используется ──────
 
-def test_dns_without_local_resolver(monkeypatch):
-    monkeypatch.setattr(system, "local_resolver_active", lambda: False)
+@pytest.mark.parametrize("resolver_active", [False, True])
+def test_dns_ignores_local_resolver(monkeypatch, resolver_active):
+    # 127.0.0.53 не добавляется в DNS Xray независимо от состояния резолвера
+    monkeypatch.setattr(system, "local_resolver_active", lambda: resolver_active)
     monkeypatch.setattr(config, "vwn_conf_get", lambda k: None)
     d = xray._dns()
     assert "127.0.0.53" not in d["servers"]
     assert d["servers"][:2] == ["1.1.1.1", "9.9.9.9"]
 
 
-def test_dns_with_local_resolver(monkeypatch):
-    monkeypatch.setattr(system, "local_resolver_active", lambda: True)
-    monkeypatch.setattr(config, "vwn_conf_get", lambda k: None)
-    assert xray._dns()["servers"][0] == "127.0.0.53"
-
-
-def test_routing_dns_rule_conditional(monkeypatch):
-    monkeypatch.setattr(system, "local_resolver_active", lambda: False)
-    assert all(r.get("ip") != ["127.0.0.53"] for r in xray._routing_base()["rules"])
-    monkeypatch.setattr(system, "local_resolver_active", lambda: True)
-    assert xray._routing_base()["rules"][0]["ip"] == ["127.0.0.53"]
-    assert xray._routing_base()["rules"][-1]["outboundTag"] == "free"
+@pytest.mark.parametrize("resolver_active", [False, True])
+def test_routing_has_no_local_dns_rule(monkeypatch, resolver_active):
+    monkeypatch.setattr(system, "local_resolver_active", lambda: resolver_active)
+    r = xray._routing_base()
+    assert r["domainStrategy"] == "IPIfNonMatch"
+    assert all(x.get("ip") != ["127.0.0.53"] for x in r["rules"])
+    assert r["rules"][-1]["outboundTag"] == "free"
 
 
 def test_local_resolver_active_false_when_nothing_listens(monkeypatch):

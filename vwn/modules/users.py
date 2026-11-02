@@ -359,8 +359,12 @@ def apply_users_to_configs() -> None:
     users_list = list_users()
     if not users_list:
         return
-    clients_r = [{"id": u["uuid"], "flow": "xtls-rprx-vision", "email": u["label"]}
-                 for u in users_list]
+    reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
+    if reality_mode == "xhttp":
+        clients_r = [{"id": u["uuid"], "email": u["label"]} for u in users_list]
+    else:
+        clients_r = [{"id": u["uuid"], "flow": "xtls-rprx-vision", "email": u["label"]}
+                     for u in users_list]
     clients_x = [{"id": u["uuid"], "email": u["label"]} for u in users_list]
 
     ws_path = os.path.join(config.XRAY_DIR, "config.json")

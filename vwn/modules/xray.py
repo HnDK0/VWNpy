@@ -24,14 +24,45 @@ _SNIFFING = {
 }
 
 
-def _sockopt() -> dict:
-    return {
-        "tcpFastOpen": True,
-        "tcpKeepAliveIdle": 60,
-        "tcpKeepAliveInterval": 10,
-        "tcpCongestion": "bbr",
-        "tcpMptcp": False,
-    }
+def _bbr_available() -> bool:
+    """BBR реально доступен в ядре (иначе Xray падает на TCP_CONGESTION)."""
+    p = "/proc/sys/net/ipv4/tcp_available_congestion_control"
+    try:
+        if "bbr" not in open(p).read().split():
+            shell.run(["modprobe", "tcp_bbr"], check=False)
+        return "bbr" in open(p).read().split()
+    except OSError:
+        return False
+
+
+def _tfo_server_ok() -> bool:
+    try:
+        return int(open("/proc/sys/net/ipv4/tcp_fastopen").read().strip()) & 2 != 0
+    except (OSError, ValueError):
+        return False
+
+
+def _sockopt(public: bool = True) -> dict:
+    """sockopt inbound'а.
+
+    loopback-inbound'ы (ws/xhttp за nginx): только keepalive — TFO/BBR там
+    бессмысленны. Публичный Reality: TFO/BBR только если их поддерживает ядро
+    этого сервера, иначе Xray не может выставить опцию сокета.
+    """
+    opt = {"tcpKeepAliveIdle": 60, "tcpKeepAliveInterval": 10}
+    if public:
+        if _tfo_server_ok():
+            opt["tcpFastOpen"] = True
+        if _bbr_available():
+            opt["tcpCongestion"] = "bbr"
+    return opt
+
+
+def _xhttp_server_settings(path: str) -> dict:
+    """Серверный XHTTP всегда mode=auto: принимает stream-one/stream-up/
+    packet-up. Закреплённый режим режет клиентов (auto по TLS = stream-up).
+    Версионно-зависимые поля (scMax*) не пишем."""
+    return {"path": path, "mode": "auto"}
 
 
 def _dns() -> dict:
@@ -40,16 +71,14 @@ def _dns() -> dict:
     v4_primary = config.vwn_conf_get("DNS_V4_PRIMARY") or "1.1.1.1"
     v4_fallback = config.vwn_conf_get("DNS_V4_FALLBACK") or "9.9.9.9"
     v6_primary = config.vwn_conf_get("DNS_V6_PRIMARY") or ""
-    # 127.0.0.53 добавляем только если там реально слушает резолвер, иначе xray
-    # теряет секунды на каждый новый домен (клиентский пинг показывает «мёртв»).
     servers = [v4_primary, v4_fallback]
-    if system.local_resolver_active():
-        servers.insert(0, "127.0.0.53")
     if v6_primary:
         servers.append(v6_primary)
         query_strategy = "UseIP"
     else:
         query_strategy = "UseIPv4"
+    # системный резолвер — последний шанс, если провайдер режет 1.1.1.1/9.9.9.9
+    servers.append("localhost")
     return {"servers": servers, "queryStrategy": query_strategy}
 
 
@@ -67,12 +96,9 @@ def _outbounds() -> list:
 
 
 def _routing_base() -> dict:
-    rules = []
-    if system.local_resolver_active():
-        rules.append({"type": "field", "ip": ["127.0.0.53"], "outboundTag": "dns-out"})
     return {
-        "domainStrategy": "AsIs",
-        "rules": rules + [
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
             {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
             {"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
             {"type": "field", "port": "25, 587, 465, 2525", "network": "tcp",
@@ -85,8 +111,8 @@ def _routing_base() -> dict:
 
 def _policy(conn_idle: int = 3600) -> dict:
     return {"levels": {"0": {
-        "handshake": 8, "connIdle": conn_idle, "uplinkOnly": 3,
-        "downlinkOnly": 5, "bufferSize": 512,
+        "handshake": 15, "connIdle": conn_idle, "uplinkOnly": 0,
+        "downlinkOnly": 0, "bufferSize": 512,
     }}}
 
 
@@ -149,14 +175,14 @@ def reality_config(uuid: str, server_name: str,
                     "privateKey": private_key,
                     "shortIds": [short_id],
                 },
-                "sockopt": _sockopt(),
+                "sockopt": _sockopt(public=True),
             },
             "sniffing": _SNIFFING,
             "tag": "reality-inbound",
         }],
         "outbounds": _outbounds(),
         "routing": _routing_base(),
-        "policy": _policy(conn_idle=300),
+        "policy": _policy(conn_idle=3600),
     }
 
 
@@ -173,7 +199,7 @@ def ws_config(uuid: str, port: int, ws_path: str, domain: str) -> dict:
                 "network": "ws",
                 "security": "none",
                 "wsSettings": {"path": ws_path, "host": domain},
-                "sockopt": _sockopt(),
+                "sockopt": _sockopt(public=False),
             },
             "sniffing": _SNIFFING,
             "tag": "ws-inbound",
@@ -186,7 +212,6 @@ def ws_config(uuid: str, port: int, ws_path: str, domain: str) -> dict:
 
 def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
                  mode: str = "auto") -> dict:
-    # Только gRPC-вариант (по решению): mode=auto + nginx grpc_pass.
     return {
         "log": _log("/var/log/xray/error.log"),
         "dns": _dns(),
@@ -198,17 +223,8 @@ def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
             "streamSettings": {
                 "network": "xhttp",
                 "security": "none",
-                "xhttpSettings": {
-                    "path": xhttp_path,
-                    "mode": mode,
-                    "xmux": {
-                        "maxConcurrency": "4-8",
-                        "maxConnections": 6,
-                        "hMaxRequestTimes": "300-600",
-                        "hMaxReusableSecs": "900-1800",
-                    },
-                },
-                "sockopt": _sockopt(),
+                "xhttpSettings": _xhttp_server_settings(xhttp_path),
+                "sockopt": _sockopt(public=False),
             },
             "sniffing": _SNIFFING,
             "tag": "xhttp-inbound",
@@ -303,7 +319,8 @@ def update_reality_sni(dest: str) -> None:
 
 
 def set_reality_mode(mode: str, xhttp_path: str | None = None,
-                     xhttp_mode: str | None = None) -> None:
+                     xhttp_mode: str | None = None,
+                     restart: bool = True) -> None:
     path = os.path.join(config.XRAY_DIR, "xray-reality.json")
     cfg = _read_json(path)
     if cfg is None:
@@ -314,8 +331,8 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
         p = xhttp_path or config.vwn_conf_get("REALITY_XHTTP_PATH") or "/r"
         xm = xhttp_mode or config.vwn_conf_get("REALITY_XHTTP_MODE") or "auto"
         ss["network"] = "xhttp"
-        ss["xhttpSettings"] = {"path": p, "mode": xm}
-        ss.pop("sockopt", None)
+        ss["xhttpSettings"] = _xhttp_server_settings(p)
+        ss["sockopt"] = _sockopt(public=True)
         for c in ib.get("settings", {}).get("clients", []):
             c.pop("flow", None)
         config.vwn_conf_set("REALITY_MODE", "xhttp")
@@ -324,18 +341,13 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
     else:
         ss["network"] = "tcp"
         ss.pop("xhttpSettings", None)
-        ss["sockopt"] = {
-            "tcpFastOpen": True,
-            "tcpKeepAliveIdle": 60,
-            "tcpKeepAliveInterval": 10,
-            "tcpCongestion": "bbr",
-        }
-        clients = ib.get("settings", {}).get("clients", [])
-        if clients:
-            clients[0]["flow"] = "xtls-rprx-vision"
+        ss["sockopt"] = _sockopt(public=True)
+        for c in ib.get("settings", {}).get("clients", []):
+            c["flow"] = "xtls-rprx-vision"
         config.vwn_conf_set("REALITY_MODE", "tcp")
     _write_json(path, cfg)
-    shell.run(["systemctl", "restart", "xray-reality"], check=False)
+    if restart:
+        shell.run(["systemctl", "restart", "xray-reality"], check=False)
 
 
 def _add_disabled(protocol: str) -> None:
@@ -378,17 +390,11 @@ def enable_reality() -> None:
 
 
 def set_xhttp_mode(mode: str) -> None:
-    path = os.path.join(config.XRAY_DIR, "xhttp.json")
-    cfg = _read_json(path)
-    if cfg is None:
+    """Режим XHTTP для КЛИЕНТСКИХ ссылок. Серверный inbound всегда auto,
+    поэтому JSON и сервис не трогаем."""
+    if _read_json(os.path.join(config.XRAY_DIR, "xhttp.json")) is None:
         raise RuntimeError("XHTTP не установлен")
-    ib = cfg.get("inbounds", [{}])[0]
-    ss = ib.setdefault("streamSettings", {})
-    xhs = ss.setdefault("xhttpSettings", {})
-    xhs["mode"] = mode
-    _write_json(path, cfg)
     config.vwn_conf_set("XHTTP_MODE", mode)
-    shell.run(["systemctl", "restart", "xray-xhttp"], check=False)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
 
@@ -561,7 +567,7 @@ def rebuild_configs() -> None:
 
     reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
     if reality_mode != "tcp":
-        set_reality_mode(reality_mode)
+        set_reality_mode(reality_mode, restart=False)
 
     write_ws_config(os.path.join(config.XRAY_DIR, "config.json"),
                     uuid_, config.XRAY_WS_PORT, ws_path, domain)
@@ -595,6 +601,10 @@ def _re_render_nginx(**overrides) -> None:
     ws_path = overrides.get("ws_path") or config.vwn_conf_get("WS_PATH") or "/ws"
     xhttp_path = overrides.get("xhttp_path") or config.vwn_conf_get("XHTTP_PATH") or "/xhttp"
     proxy_host = overrides.get("proxy_host") or urlparse(stub).netloc or domain
+    try:
+        system._write_nginx_main_conf()
+    except OSError:
+        pass
     write_nginx_loopback_config(
         tpl, config.NGINX_LOOPBACK_CONF,
         NGINX_LOOPBACK_PORT=config.NGINX_LOOPBACK_PORT, DOMAIN=domain, STUB=stub,

@@ -144,3 +144,26 @@ def test_build_user_sub_file(conf, tmp_path, monkeypatch):
     assert len(found_html) == 1
     html = found_html[0].read_text(encoding="utf-8")
     assert "vpn.example.com" in html
+
+
+# ── XHTTP/WS ссылки: ALPN и режим клиента ───────────────────────────
+
+def test_xhttp_url_alpn_h2_only():
+    u = sub.generate_xhttp_url("u", "h.example.com", 443, "/x", "d.example.com", "n", mode="stream-one")
+    assert "alpn=h2&" in u and "http%2F1.1" not in u   # stream-up/one по HTTP/1.1 не работают
+    assert "mode=stream-one" in u and "encryption=none" in u
+
+
+def test_ws_url_alpn_http11():
+    u = sub.generate_ws_url("u", "h.example.com", 443, "/ws", "d.example.com", "n")
+    assert "alpn=http%2F1.1" in u                      # nginx не умеет WS по h2
+
+
+@pytest.mark.parametrize("given,expected", [
+    ("auto", "stream-one"), ("", "stream-one"),
+    ("stream-one", "stream-one"), ("packet-up", "packet-up"),
+])
+def test_reality_xhttp_url_never_auto(given, expected):
+    u = sub.generate_reality_url("u", "1.2.3.4", 443, "sid", "microsoft.com", "pbk", "n",
+                                 mode="xhttp", xhttp_path="/r", xhttp_extra=given)
+    assert f"mode={expected}" in u and "mode=auto" not in u

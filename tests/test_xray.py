@@ -25,7 +25,9 @@ def test_generate_uuid_format():
     assert _uuid.UUID(xray.generate_uuid())
 
 
-def test_reality_config_shape():
+def test_reality_config_shape(monkeypatch):
+    monkeypatch.setattr(xray, "_bbr_available", lambda: True)
+    monkeypatch.setattr(xray, "_tfo_server_ok", lambda: True)
     c = xray.reality_config("uuid-1", "vpn.example.com",
                             "PRIV", "SHORT", port=443, fallback_port=8443)
     ib = c["inbounds"][0]
@@ -47,7 +49,7 @@ def test_reality_config_shape():
     assert "warp-svc" not in tags
     assert ib["sniffing"]["routeOnly"] is True
     assert ib["streamSettings"]["sockopt"]["tcpCongestion"] == "bbr"
-    assert ib["streamSettings"]["sockopt"]["tcpMptcp"] is False
+    assert ib["streamSettings"]["sockopt"]["tcpFastOpen"] is True
 
 
 def test_ws_config_shape():
@@ -58,8 +60,10 @@ def test_ws_config_shape():
     assert ib["streamSettings"]["network"] == "ws"
     assert ib["streamSettings"]["wsSettings"]["path"] == "/v2/api/abc"
     assert ib["streamSettings"]["wsSettings"]["host"] == "vpn.example.com"
-    assert ib["streamSettings"]["sockopt"]["tcpCongestion"] == "bbr"
-    assert ib["streamSettings"]["sockopt"]["tcpMptcp"] is False
+    # loopback-inbound: только keepalive, без BBR/TFO (не зависит от ядра)
+    assert "tcpCongestion" not in ib["streamSettings"]["sockopt"]
+    assert "tcpFastOpen" not in ib["streamSettings"]["sockopt"]
+    assert ib["streamSettings"]["sockopt"]["tcpKeepAliveIdle"] == 60
     assert ib["sniffing"]["routeOnly"] is True
 
 
@@ -68,8 +72,13 @@ def test_xhttp_config_shape():
     ib = c["inbounds"][0]
     assert ib["port"] == 50002
     assert ib["streamSettings"]["network"] == "xhttp"
-    assert ib["streamSettings"]["xhttpSettings"]["mode"] == "stream"
-    assert "xmux" in ib["streamSettings"]["xhttpSettings"]
+    xs = ib["streamSettings"]["xhttpSettings"]
+    # серверный режим всегда auto (принимает stream-one/stream-up/packet-up),
+    # режим клиента задаётся в ссылке; версионно-зависимые поля не пишем
+    assert xs["mode"] == "auto"
+    assert xs["path"] == "/v2/api/xyz"
+    assert "xmux" not in xs
+    assert "scMaxConcurrentPosts" not in xs and "scMaxEachPostBytes" not in xs
 
 
 def test_provision_writes_valid_configs(paths):
@@ -94,9 +103,12 @@ def test_provision_writes_valid_configs(paths):
     assert "127.0.0.1:8443" in ng                          # nginx loopback (через Reality fallback)
     assert "log_format main_safe" in ng                  # иначе nginx -t падает
     assert "127.0.0.1:50001" in ng
-    assert "grpc_pass grpc://127.0.0.1:50002" in ng     # XHTTP только gRPC (со схемой)
-    assert "grpc_buffer_size 64k" in ng                  # полный блок, не пустышка
+    assert "grpc_pass grpc://127.0.0.1:50002" in ng     # XHTTP только grpc_pass (h2c)
+    assert "proxy_pass http://127.0.0.1:50002" not in ng  # HTTP/1.1 ломает stream-up/one
+    assert "grpc_buffer_size 64k" in ng
     assert "grpc_read_timeout 315s" in ng
+    assert "client_body_timeout 5m" in ng
+    assert "keepalive_timeout 5m" in ng
     assert "root /usr/local/etc/xray" in ng              # подписки (root, файлы в sub/)
     assert "proxy_pass https://www.openstreetmap.org/" in ng
     assert "Strict-Transport-Security" in ng
@@ -193,3 +205,51 @@ def test_rebuild_preserves_relay_routing(paths, monkeypatch):
     port_rules = [r for r in rc["routing"]["rules"]
                   if r.get("outboundTag") == "relay" and r.get("port") == "0-65535"]
     assert len(port_rules) == 1, "relay Global rule must survive rebuild"
+
+
+# ── sockopt: зависит от возможностей ядра сервера ───────────────────
+
+def test_sockopt_public_without_kernel_support(monkeypatch):
+    monkeypatch.setattr(xray, "_bbr_available", lambda: False)
+    monkeypatch.setattr(xray, "_tfo_server_ok", lambda: False)
+    so = xray._sockopt(public=True)
+    assert "tcpCongestion" not in so and "tcpFastOpen" not in so
+
+
+def test_sockopt_public_with_kernel_support(monkeypatch):
+    monkeypatch.setattr(xray, "_bbr_available", lambda: True)
+    monkeypatch.setattr(xray, "_tfo_server_ok", lambda: True)
+    so = xray._sockopt(public=True)
+    assert so["tcpCongestion"] == "bbr" and so["tcpFastOpen"] is True
+
+
+def test_sockopt_loopback_never_has_bbr(monkeypatch):
+    monkeypatch.setattr(xray, "_bbr_available", lambda: True)
+    monkeypatch.setattr(xray, "_tfo_server_ok", lambda: True)
+    assert "tcpCongestion" not in xray._sockopt(public=False)
+
+
+@pytest.mark.parametrize("m", ["auto", "stream-one", "stream-up", "packet-up", "stream"])
+def test_xhttp_server_mode_always_auto(m):
+    c = xray.xhttp_config("u", 50002, "/x", "d.example.com", mode=m)
+    assert c["inbounds"][0]["streamSettings"]["xhttpSettings"]["mode"] == "auto"
+
+
+def test_dns_has_system_resolver_last(monkeypatch):
+    monkeypatch.setattr(config, "vwn_conf_get", lambda k: None)
+    assert xray._dns()["servers"][-1] == "localhost"
+
+
+def test_set_xhttp_mode_does_not_pin_server(paths, monkeypatch):
+    """Смена режима меняет только клиентские ссылки; серверный inbound остаётся auto."""
+    xray.provision_configs("vpn.example.com", "https://www.openstreetmap.org/",
+                           "microsoft.com:443", private_key="PRIV")
+    calls = []
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: calls.append(a))
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda: None)
+    xray.set_xhttp_mode("stream-one")
+    xc = json.loads((paths / "xray" / "xhttp.json").read_text(encoding="utf-8"))
+    assert xc["inbounds"][0]["streamSettings"]["xhttpSettings"]["mode"] == "auto"
+    assert config.vwn_conf_get("XHTTP_MODE") == "stream-one"
+    assert calls == []          # перезапуск xray не нужен
