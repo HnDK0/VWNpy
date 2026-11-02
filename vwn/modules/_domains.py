@@ -107,5 +107,5 @@ def _apply(tag: str, routing_tag: str | None = None) -> None:
                     r.pop("port", None)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
         shell.run(["systemctl", "restart", svc], timeout=30, check=False)

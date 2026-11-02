@@ -24,7 +24,7 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 | Протокол | Порт | Transport | Сервис |
 |----------|------|-----------|--------|
 | VLESS + Reality | 443 (публичный) | TCP + XHTTP fallback | `xray-reality` |
-| VLESS + WS + TLS | 50001 (loopback) | WebSocket | `xray-ws` |
+| VLESS + gRPC + TLS | 50001 (loopback) | gRPC (`gun` / `multi`, h2) | `xray-grpc` |
 | VLESS + XHTTP | 50002 (loopback) | XHTTP | `xray-xhttp` |
 
 ```
@@ -32,9 +32,13 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
   └─ Xray Reality
        └─ fallback → nginx 127.0.0.1:8443
             ├─ /sub/*        — подписки
-            ├─ /v2/api/ws/*  → xray-ws :50001
+            ├─ /<serviceName>/*  → xray-grpc :50001 (grpc_pass, h2c)
             └─ /v2/api/xh/*  → xray-xhttp :50002
 ```
+
+## Переход с WebSocket на gRPC
+
+На сервере со старой версией выполните `vwn rebuild`: сервис `xray-ws` и `config.json` удаляются, создаются `xray-grpc` и `grpc.json`, nginx и подписки пересобираются. Старые WS-ссылки перестанут работать — клиентам нужно обновить подписку.
 
 ## Системные требования
 
@@ -104,7 +108,8 @@ vwn install [флаги...]     Установка стека
 vwn status                 Диагностика (сервисы, сертификат, пользователи, подписки)
 vwn menu                   TUI-меню (Rich)
 vwn provision [--domain]   Перегенерация конфигов Xray
-vwn qr [--type]            QR-код первого конфига (reality/ws/xhttp)
+vwn rebuild               Пересобрать конфиги; на старой установке с WS — переход на gRPC
+vwn qr [--type]            QR-код первого конфига (reality/grpc/xhttp)
 vwn sub rebuild            Пересобрать подписки для всех пользователей
 vwn backup                 Резервное копирование
 vwn restore                Восстановление из бэкапа
@@ -119,10 +124,10 @@ vwn close-80               Закрыть порт 80 в UFW (хук acme.sh)
 Конфигурация: `/usr/local/etc/xray/users.conf` (формат `UUID|label|token`).
 
 Каждый пользователь получает:
-- Уникальный UUID для Reality, WS и XHTTP
+- Уникальный UUID для Reality, gRPC и XHTTP
 - Token подписки
 - `.txt` (base64) + `.html` (с QR и ссылками)
-- Имя конфига с флагом страны (`🇲🇩 VL-WS | phone`)
+- Имя конфига с флагом страны (`🇲🇩 VL-gRPC | phone`)
 
 Управление через `vwn menu` или напрямую через `vwn.modules.users`.
 

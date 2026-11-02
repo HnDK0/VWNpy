@@ -1,5 +1,6 @@
 import vwn.core.config as config
-from vwn.core.validate import validate_port, validate_domain, validate_url
+from vwn.core.validate import (validate_port, validate_domain, validate_url,
+                               validate_grpc_service)
 from vwn.core.render import render_config
 from vwn.core.system import find_free_port, generate_random_path, \
     parse_nginx_version, version_ge, NGINX_TARGET_VER, \
@@ -112,3 +113,19 @@ def test_config_invalid_key(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     with pytest.raises(ValueError):
         config.vwn_conf_set("bad key", "x")
+
+
+def test_validate_grpc_service():
+    import pytest
+    assert validate_grpc_service("svcabc123") == "svcabc123"
+    assert validate_grpc_service(" /my.Svc-1_x/ ") == "my.Svc-1_x"   # "/" по краям срезаются
+    for bad in ("", "/", "a/b", "a b", ".hidden", "a;b", "a" * 65, "путь"):
+        with pytest.raises(ValueError):
+            validate_grpc_service(bad)
+
+
+def test_generate_grpc_service():
+    from vwn.core.system import generate_grpc_service
+    a, b = generate_grpc_service(), generate_grpc_service()
+    assert a != b and a.startswith("svc") and "/" not in a
+    assert validate_grpc_service(a) == a

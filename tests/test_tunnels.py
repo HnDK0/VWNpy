@@ -77,7 +77,7 @@ def test_global_guard_removes_other_global(monkeypatch, tmp_path):
         {"type": "field", "port": "0-65535", "outboundTag": "warp"},
         {"type": "field", "domain": ["geosite:netflix"], "outboundTag": "psiphon"},
     ]}, "outbounds": []}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
@@ -106,7 +106,7 @@ def test_global_guard_allows_split(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "warp"},
     ]}, "outbounds": []}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
@@ -130,7 +130,7 @@ def test_switch_split_uses_whoer_net_when_no_domains(monkeypatch, tmp_path):
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": []}, "outbounds": []}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
@@ -153,7 +153,7 @@ def test_switch_split_uses_saved_domains(monkeypatch, tmp_path):
     from vwn.core import config as vc
     monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
     cfg = {"routing": {"rules": []}, "outbounds": []}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     with open(tmp_path / "xhttp.json", "w") as f:
@@ -231,7 +231,7 @@ def test_domains_apply_empty_preserves_outbound(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "domain": ["domain:example.com"], "outboundTag": "warp-native"},
     ]}, "outbounds": [{"tag": "warp-native", "protocol": "wireguard"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -259,7 +259,7 @@ def test_add_domain_blocked_in_global(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "warp-native"},
     ]}, "outbounds": [{"tag": "warp-native", "protocol": "wireguard"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -278,7 +278,7 @@ def test_add_domain_allowed_in_split(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "domain": ["domain:existing.com"], "outboundTag": "warp-native"},
     ]}, "outbounds": [{"tag": "warp-native", "protocol": "wireguard"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -297,7 +297,7 @@ def test_add_domain_blocked_in_global_psiphon(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "psiphon"},
     ]}, "outbounds": [{"tag": "psiphon", "protocol": "socks"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -315,7 +315,7 @@ def test_add_domain_blocked_in_global_relay(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "relay"},
     ]}, "outbounds": [{"tag": "relay", "protocol": "socks"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 

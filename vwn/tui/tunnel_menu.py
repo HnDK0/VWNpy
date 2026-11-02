@@ -12,7 +12,7 @@ from vwn.tui.helpers import (ensure_working_country, pick_country, restart_xray_
 
 
 def _switch_tunnel_mode(tag: str, mode: str) -> str:
-    if not os.path.isfile(os.path.join(config.XRAY_DIR, "config.json")):
+    if not os.path.isfile(os.path.join(config.XRAY_DIR, "grpc.json")):
         return tag
     from vwn.modules._outbound import _paths
     from vwn.modules.tunnels import _match_tunnel_tag
@@ -69,7 +69,7 @@ def manage_tunnel(name: str, svc: str, tag: str, has_install: bool = False,
                   extra: dict[str, collections.abc.Callable[[], None]] | None = None) -> None:
     from vwn.modules.tunnels import get_tunnel_mode_from_file, render_tunnel_status
     while True:
-        config_path = os.path.join(config.XRAY_DIR, "config.json")
+        config_path = os.path.join(config.XRAY_DIR, "grpc.json")
         mode = get_tunnel_mode_from_file(config_path, tag)
         active = shell.service_active(svc) if svc else False
         country = ""

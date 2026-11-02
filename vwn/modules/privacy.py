@@ -16,7 +16,7 @@ _TMPFS_MOUNT = "/etc/systemd/system/var-log-xray.mount"
 
 def _xray_configs() -> list[str]:
     d = "/usr/local/etc/xray"
-    return [os.path.join(d, f) for f in ["config.json", "xray-reality.json", "xhttp.json"]
+    return [os.path.join(d, f) for f in ["grpc.json", "xray-reality.json", "xhttp.json"]
             if os.path.isfile(os.path.join(d, f))]
 
 

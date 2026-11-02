@@ -1,7 +1,7 @@
 """Генерация VLESS-ссылок, файлов подписок и HTML-страниц пользователей.
 
-Зависит от vwn.conf (DOMAIN, UUID, WS_PATH, XHTTP_PATH, REALITY_DEST,
-REALITY_PORT, REALITY_PUBKEY, SHORT_ID, XHTTP_MODE) для построения URL.
+Зависит от vwn.conf (DOMAIN, UUID, GRPC_SERVICE, GRPC_MODE, XHTTP_PATH,
+REALITY_DEST, REALITY_PORT, REALITY_PUBKEY, SHORT_ID, XHTTP_MODE) для построения URL.
 """
 
 import base64
@@ -44,20 +44,27 @@ def generate_reality_url(
     return f"{base}&type=tcp&flow=xtls-rprx-vision#{_urlencode(name)}"
 
 
-def generate_ws_url(
+def generate_grpc_url(
     uuid_val: str,
     connect_host: str,
     port: int,
-    ws_path: str,
+    service_name: str,
     domain: str,
     name: str,
+    mode: str = "gun",
 ) -> str:
-    encoded_path = _urlencode(ws_path)
+    """VLESS+gRPC+TLS. gRPC работает только поверх h2 → alpn=h2 обязателен.
+
+    mode: gun (одиночный стрим /Tun, совместим со всеми клиентами) или multi
+    (/TunMulti, меньше соединений, не везде поддерживается). authority = домен:
+    через CDN/чужой connect_host :authority иначе был бы IP.
+    """
     return (
         f"vless://{uuid_val}@{connect_host}:{port}"
         f"?encryption=none&security=tls"
-        f"&sni={domain}&fp=chrome&alpn=http%2F1.1"
-        f"&type=ws&host={domain}&path={encoded_path}"
+        f"&sni={domain}&fp=chrome&alpn=h2"
+        f"&type=grpc&serviceName={_urlencode(service_name)}"
+        f"&mode={mode}&authority={domain}"
         f"#{_urlencode(name)}"
     )
 
@@ -147,10 +154,10 @@ def build_user_html_page(
             m = re.search(r"@([^:]+)", line)
             host_disp = m.group(1) if m else (server_ip or "")
             cfg_cdn_ip = ""
-        elif "type=ws" in line:
-            cfg_type = "ws"
-            proto_label = "WS + TLS"
-            m = re.search(r"host=([^&]+)", line)
+        elif "type=grpc" in line:
+            cfg_type = "grpc"
+            proto_label = "gRPC + TLS"
+            m = re.search(r"authority=([^&#]+)", line)
             host_disp = m.group(1) if m else (domain or "")
             cfg_cdn_ip = cdn_ip
         elif "type=xhttp" in line:
@@ -173,13 +180,13 @@ def build_user_html_page(
         })
 
     icons = {
-        "ws": '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+        "grpc": '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
         "reality": '<svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
         "xhttp": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
         "other": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>',
     }
     proto_tag_labels = {
-        "ws": "WebSocket",
+        "grpc": "gRPC",
         "reality": "Reality",
         "xhttp": "XHTTP",
     }
@@ -286,7 +293,8 @@ def build_user_sub_file(
         output_dir = SUB_DIR
     os.makedirs(output_dir, exist_ok=True)
 
-    ws_path = get_conf_or_none("WS_PATH") or ""
+    grpc_service = get_conf_or_none("GRPC_SERVICE") or ""
+    grpc_mode = get_conf_or_none("GRPC_MODE") or "gun"
     xhttp_path = get_conf_or_none("XHTTP_PATH") or ""
     xhttp_mode = get_conf_or_none("XHTTP_MODE") or "auto"
     reality_port_str = get_conf_or_none("REALITY_PORT") or "443"
@@ -306,10 +314,11 @@ def build_user_sub_file(
     lines: list[str] = []
     disabled = get_disabled_protocols()
 
-    if ws_path and "ws" not in disabled:
-        name_ws = users.get_config_name("WS", label)
-        lines.append(generate_ws_url(
-            uuid_val, connect_host, 443, ws_path, domain, name_ws,
+    if grpc_service and "grpc" not in disabled:
+        name_grpc = users.get_config_name("gRPC", label)
+        lines.append(generate_grpc_url(
+            uuid_val, connect_host, 443, grpc_service, domain, name_grpc,
+            mode=grpc_mode,
         ))
 
     if xhttp_path and "xhttp" not in disabled:

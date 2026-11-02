@@ -430,7 +430,7 @@ def _append_if_missing(path: str, text: str) -> None:
 
 # ── CPU Guard (systemd cgroup priority) ─────────────────────────────
 
-_CPU_GUARD_SVCS = ["xray-reality.service", "xray-ws.service", "xray-xhttp.service", "nginx.service"]
+_CPU_GUARD_SVCS = ["xray-reality.service", "xray-grpc.service", "xray-xhttp.service", "nginx.service"]
 
 
 def cpu_guard_status() -> bool:
@@ -441,7 +441,7 @@ def cpu_guard_enable() -> None:
     for svc in _CPU_GUARD_SVCS:
         shell.run(["systemctl", "set-property", svc, "CPUWeight=200"], check=False)
     shell.run(["systemctl", "set-property", "user.slice", "CPUWeight=20"], check=False)
-    for svc_name in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+    for svc_name in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
         drop_in = f"/etc/systemd/system/{svc_name}.service.d"
         os.makedirs(drop_in, exist_ok=True)
         with open(os.path.join(drop_in, "cpuguard.conf"), "w") as f:
@@ -453,7 +453,7 @@ def cpu_guard_enable() -> None:
 
 
 def cpu_guard_disable() -> None:
-    for svc_name in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+    for svc_name in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
         p = f"/etc/systemd/system/{svc_name}.service.d/cpuguard.conf"
         if os.path.isfile(p):
             os.remove(p)

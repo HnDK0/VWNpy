@@ -14,7 +14,7 @@ def conf(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "NGINX_LOOPBACK_PORT", 8443)
     config.vwn_conf_set("DOMAIN", "vpn.example.com")
     config.vwn_conf_set("UUID", "550e8400-e29b-41d4-a716-446655440000")
-    config.vwn_conf_set("WS_PATH", "/v2/api/abc")
+    config.vwn_conf_set("GRPC_SERVICE", "svcabc123")
     config.vwn_conf_set("XHTTP_PATH", "/v2/api/xyz")
     config.vwn_conf_set("XHTTP_MODE", "auto")
     config.vwn_conf_set("REALITY_PORT", "443")
@@ -40,16 +40,27 @@ def test_generate_reality_url():
     assert "Reality" in url
 
 
-def test_generate_ws_url():
-    url = sub.generate_ws_url(
-        "uuid-1", "vpn.example.com", 8443, "/v2/api/abc",
-        "vpn.example.com", "WS+ user1 1.2.3.4",
+def test_generate_grpc_url():
+    url = sub.generate_grpc_url(
+        "uuid-1", "vpn.example.com", 8443, "svcabc123",
+        "vpn.example.com", "gRPC user1 1.2.3.4",
     )
     assert url.startswith("vless://uuid-1@vpn.example.com:8443")
+    assert "encryption=none" in url
     assert "security=tls" in url
-    assert "type=ws" in url
-    assert "path=%2Fv2%2Fapi%2Fabc" in url or "path=/v2/api/abc" in url
-    assert "host=vpn.example.com" in url
+    assert "type=grpc" in url
+    assert "serviceName=svcabc123" in url
+    assert "mode=gun" in url                       # по умолчанию — совместимый gun
+    assert "authority=vpn.example.com" in url      # через CDN :authority = домен, не IP
+    assert "sni=vpn.example.com" in url
+    assert "type=ws" not in url and "path=" not in url
+
+
+def test_generate_grpc_url_multi_and_cdn_host():
+    url = sub.generate_grpc_url("u", "1.2.3.4", 443, "svc", "d.example.com", "n", mode="multi")
+    assert url.startswith("vless://u@1.2.3.4:443")
+    assert "mode=multi" in url
+    assert "sni=d.example.com" in url and "authority=d.example.com" in url
 
 
 def test_generate_xhttp_url():
@@ -136,7 +147,7 @@ def test_build_user_sub_file(conf, tmp_path, monkeypatch):
     assert txt_path.exists()
     b64 = txt_path.read_text()
     decoded = base64.b64decode(b64).decode()
-    # WS/XHTTP через Reality fallback → порт 443
+    # gRPC/XHTTP через Reality fallback → порт 443
     assert "vpn.example.com:443" in decoded
     assert "1.2.3.4:443" in decoded
     # .html created
@@ -146,7 +157,7 @@ def test_build_user_sub_file(conf, tmp_path, monkeypatch):
     assert "vpn.example.com" in html
 
 
-# ── XHTTP/WS ссылки: ALPN и режим клиента ───────────────────────────
+# ── XHTTP/gRPC ссылки: ALPN и режим клиента ─────────────────────────
 
 def test_xhttp_url_alpn_h2_only():
     u = sub.generate_xhttp_url("u", "h.example.com", 443, "/x", "d.example.com", "n", mode="stream-one")
@@ -154,9 +165,41 @@ def test_xhttp_url_alpn_h2_only():
     assert "mode=stream-one" in u and "encryption=none" in u
 
 
-def test_ws_url_alpn_http11():
-    u = sub.generate_ws_url("u", "h.example.com", 443, "/ws", "d.example.com", "n")
-    assert "alpn=http%2F1.1" in u                      # nginx не умеет WS по h2
+def test_grpc_url_alpn_h2_only():
+    u = sub.generate_grpc_url("u", "h.example.com", 443, "svc", "d.example.com", "n")
+    assert "alpn=h2&" in u and "http%2F1.1" not in u   # gRPC живёт только поверх h2
+
+
+def test_grpc_url_encodes_service_name():
+    u = sub.generate_grpc_url("u", "h", 443, "a.b-c_d", "d.example.com", "n")
+    assert "serviceName=a.b-c_d" in u
+
+
+def test_user_sub_contains_grpc_not_ws(conf, tmp_path):
+    sub.build_user_sub_file("550e8400-e29b-41d4-a716-446655440000", "user1", "TOKEN1",
+                            "vpn.example.com", "1.2.3.4", output_dir=str(tmp_path))
+    decoded = base64.b64decode((tmp_path / "user1_TOKEN1.txt").read_text()).decode()
+    grpc_lines = [l for l in decoded.splitlines() if "type=grpc" in l]
+    assert len(grpc_lines) == 1
+    assert "serviceName=svcabc123" in grpc_lines[0]
+    assert "VL-gRPC" in grpc_lines[0] or "VL-gRPC" in __import__("urllib.parse").parse.unquote(grpc_lines[0])
+    assert "type=ws" not in decoded
+    html = (tmp_path / "user1_TOKEN1.html").read_text(encoding="utf-8")
+    assert "gRPC + TLS" in html and 'class="cfg-icon grpc"' in html
+    assert "WS + TLS" not in html
+
+
+def test_user_sub_grpc_mode_and_disabled(conf, tmp_path):
+    config.vwn_conf_set("GRPC_MODE", "multi")
+    sub.build_user_sub_file("u", "user1", "T", "vpn.example.com", "1.2.3.4",
+                            output_dir=str(tmp_path))
+    decoded = base64.b64decode((tmp_path / "user1_T.txt").read_text()).decode()
+    assert "mode=multi" in [l for l in decoded.splitlines() if "type=grpc" in l][0]
+    config.vwn_conf_set("DISABLED_PROTOCOLS", "grpc")
+    sub.build_user_sub_file("u", "user1", "T", "vpn.example.com", "1.2.3.4",
+                            output_dir=str(tmp_path))
+    decoded = base64.b64decode((tmp_path / "user1_T.txt").read_text()).decode()
+    assert "type=grpc" not in decoded and "type=xhttp" in decoded
 
 
 @pytest.mark.parametrize("given,expected", [

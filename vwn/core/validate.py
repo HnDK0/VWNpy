@@ -9,6 +9,9 @@ DOMAIN_RE = re.compile(
 # (^https://[a-zA-Z0-9] ) и всегда падал. Корректный шаблон без пробела.
 URL_RE = re.compile(r"^https://[A-Za-z0-9._/-]+$")
 PORT_RE = re.compile(r"^[0-9]+$")
+# serviceName gRPC — ОДИН сегмент пути: без "/" (Xray считает имя с ведущим "/"
+# собственным путём), без пробелов и символов, требующих экранирования в URL/nginx.
+GRPC_SERVICE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def validate_port(value, min_v: int = 1, max_v: int = 65535) -> int:
@@ -26,6 +29,15 @@ def validate_domain(value: str) -> str:
     return value
 
 
+def validate_grpc_service(value: str) -> str:
+    """Нормализовать и проверить serviceName gRPC ("/name/" → "name")."""
+    name = (value or "").strip().strip("/")
+    if not GRPC_SERVICE_RE.match(name):
+        raise ValueError(
+            f"Некорректный serviceName: {value!r} (латиница, цифры, _ . -; до 64 символов)")
+    return name
+
+
 def validate_url(value: str) -> str:
     if not URL_RE.match(value or ""):
         raise ValueError(f"URL должен быть https://... : {value!r}")
@@ -41,6 +53,13 @@ if __name__ == "__main__":
     except ValueError:
         pass
     assert validate_domain("vpn.example.com") == "vpn.example.com"
+    assert validate_grpc_service("/abc.D-1_x/") == "abc.D-1_x"
+    for bad in ("", "a/b", "a b", ".x", "a" * 65):
+        try:
+            validate_grpc_service(bad)
+            raise SystemExit(f"BUG: serviceName {bad!r} принят")
+        except ValueError:
+            pass
     assert validate_url("https://www.openstreetmap.org/") == "https://www.openstreetmap.org/"
     try:
         validate_url("https://a b")  # пробел недопустим

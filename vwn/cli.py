@@ -37,7 +37,7 @@ def status():
 def report(out):
     """Собрать диагностику сервера в файл (секреты маскируются).
 
-    Для разбора проблем WS/XHTTP: версии, ядро/BBR, сервисы, конфиги,
+    Для разбора проблем gRPC/XHTTP: версии, ядро/BBR, сервисы, конфиги,
     проверки цепочки xray→nginx→443, DNS/исходящая сеть, логи.
     """
     import os
@@ -65,9 +65,9 @@ def cdn_watch():
 
 @cli.command()
 @click.option("--type", default="reality", show_default=True,
-              help="Тип конфига: reality, ws, xhttp")
+              help="Тип конфига: reality, grpc, xhttp")
 def qr(type):
-    """Показать QR-код первого конфига (Reality, WS или XHTTP)."""
+    """Показать QR-код первого конфига (Reality, gRPC или XHTTP)."""
     from vwn.core import config as vwn_cfg
     from vwn.modules import sub
     import subprocess
@@ -82,7 +82,8 @@ def qr(type):
     domain = vwn_cfg.vwn_conf_get("DOMAIN")
     pubkey = vwn_cfg.vwn_conf_get("REALITY_PUBKEY")
     short_id = vwn_cfg.vwn_conf_get("SHORT_ID")
-    ws_path = vwn_cfg.vwn_conf_get("WS_PATH")
+    grpc_service = vwn_cfg.vwn_conf_get("GRPC_SERVICE")
+    grpc_mode = vwn_cfg.vwn_conf_get("GRPC_MODE") or "gun"
     xhttp_path = vwn_cfg.vwn_conf_get("XHTTP_PATH")
     xhttp_mode = vwn_cfg.vwn_conf_get("XHTTP_MODE") or "auto"
 
@@ -97,8 +98,11 @@ def qr(type):
         xhttp_path_reality = vwn_cfg.vwn_conf_get("REALITY_XHTTP_PATH") or ""
         xhttp_extra_mode = vwn_cfg.vwn_conf_get("REALITY_XHTTP_MODE") or "auto"
         url = sub.generate_reality_url(uuid, ip, 443, short_id or "", dest_host, pubkey or "", get_config_name("Reality", label), mode=reality_mode, xhttp_path=xhttp_path_reality, xhttp_extra=xhttp_extra_mode)
-    elif type == "ws":
-        url = sub.generate_ws_url(uuid, domain, 443, ws_path or "/ws", domain, get_config_name("WS", label))
+    elif type == "grpc":
+        if not grpc_service:
+            click.echo("gRPC не настроен (GRPC_SERVICE пуст) — выполните vwn rebuild", err=True)
+            return
+        url = sub.generate_grpc_url(uuid, domain, 443, grpc_service, domain, get_config_name("gRPC", label), mode=grpc_mode)
     elif type == "xhttp":
         url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode)
     else:
@@ -118,12 +122,35 @@ def qr(type):
 @click.option("--reality-dest", default="microsoft.com:443", show_default=True)
 @click.option("--xhttp-mode", default="auto", show_default=True)
 def provision(domain, stub, reality_dest, xhttp_mode):
-    """Сгенерировать все конфиги (Reality + WS + XHTTP + loopback-nginx)."""
+    """Сгенерировать все конфиги (Reality + gRPC + XHTTP + loopback-nginx)."""
     from vwn.modules.xray import provision_configs
     params = provision_configs(domain, stub, reality_dest, xhttp_mode=xhttp_mode)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
     click.echo(f"Конфиги записаны. UUID={params['uuid']}")
+
+
+@cli.command()
+def rebuild():
+    """Пересобрать конфиги из vwn.conf (UUID/ключи сохраняются).
+
+    Для установок на WebSocket выполняет и переход на gRPC: удаляет xray-ws,
+    заводит GRPC_SERVICE, обновляет nginx и подписки.
+    """
+    import subprocess
+    from vwn.modules.xray import legacy_ws_present, rebuild_configs
+    was_ws = legacy_ws_present()
+    try:
+        rebuild_configs()
+    except RuntimeError as exc:
+        click.echo(f"Ошибка: {exc}", err=True)
+        sys.exit(1)
+    subprocess.run(["systemctl", "daemon-reload"], check=False)
+    for svc in ("xray-reality", "xray-grpc", "xray-xhttp", "nginx"):
+        subprocess.run(["systemctl", "restart", svc], check=False)
+    click.echo("Конфиги пересобраны." + (" Переход WS → gRPC выполнен; "
+               "новые ссылки — в подписках (старые WS-ссылки перестали работать)."
+               if was_ws else ""))
 
 
 @cli.group()
@@ -163,6 +190,16 @@ def update():
                            capture_output=True, text=True)
         if r.returncode == 0:
             click.echo("Готово. vwnpy обновлена.")
+            # свежий процесс: этот ещё держит старые модули в памяти
+            chk = subprocess.run(
+                [sys.executable, "-c",
+                 "from vwn.modules.xray import legacy_ws_present;"
+                 "print(int(legacy_ws_present()))"],
+                capture_output=True, text=True)
+            if chk.stdout.strip() == "1":
+                click.echo("Сервер ещё на WebSocket. Выполните «vwn rebuild» — "
+                           "переход на gRPC (UUID и ключи сохранятся, ссылки в "
+                           "подписках обновятся).")
         else:
             click.echo(f"pip install ошибка: {r.stderr.strip()}", err=True)
     except Exception as exc:
@@ -178,7 +215,7 @@ def update_xray():
     click.echo("Обновление Xray-core...")
     install_xray()
     import subprocess
-    for svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+    for svc in ("xray-reality", "xray-grpc", "xray-xhttp"):
         subprocess.run(["systemctl", "restart", svc], check=False)
     click.echo("Готово.")
 
@@ -231,13 +268,13 @@ def restore(file):
     else:
         fname = files[0]
         click.echo(f"Использую последний: {fname}")
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
         subprocess.run(["systemctl", "stop", svc], capture_output=True)
     r = subprocess.run(["tar", "-xzf", os.path.join(backup_dir, fname), "-C", "/"],
                        capture_output=True, text=True)
     if r.returncode == 0:
         subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
-        for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+        for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
             subprocess.run(["systemctl", "restart", svc], capture_output=True)
         click.echo("Восстановлено.")
     else:

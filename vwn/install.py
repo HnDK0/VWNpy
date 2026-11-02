@@ -15,7 +15,7 @@ from vwn.core.validate import validate_domain, validate_port, validate_url
 
 @dataclass
 class InstallOptions:
-    """Опции автоустановки. Reality+WS+XHTTP ставятся всегда."""
+    """Опции автоустановки. Reality+gRPC+XHTTP ставятся всегда."""
 
     domain: str = ""
     stub: str = "https://httpbin.org/"
@@ -154,7 +154,7 @@ def run_install(argv: "list | None" = None) -> None:
 
     if not system.nginx_has_grpc_module():
         shell.die("nginx собран без http_grpc_module. "
-                  "XHTTP-gRPC не заработает.")
+                  "gRPC и XHTTP не заработают.")
 
     # ── Безопасность ──────────────────────────────────────────────────
     if opts.bbr:
@@ -186,7 +186,7 @@ def run_install(argv: "list | None" = None) -> None:
 
     # ── Конфиги + сертификат + юниты + старт ──────────────────────────
     shell.run_task(
-        "Генерация конфигов (Reality/WS/XHTTP + loopback-nginx + unit-файлы)",
+        "Генерация конфигов (Reality/gRPC/XHTTP + loopback-nginx + unit-файлы)",
         lambda: xray.provision_configs(
             opts.domain, opts.stub, opts.reality_dest,
             reality_port=opts.reality_port,
@@ -214,7 +214,7 @@ def run_install(argv: "list | None" = None) -> None:
 
     shell.run_task("Проверка и перезагрузка nginx", shell.nginx_reload)
 
-    for svc in ("xray-reality", "xray-ws", "xray-xhttp", "nginx"):
+    for svc in ("xray-reality", "xray-grpc", "xray-xhttp", "nginx"):
         shell.run_task(f"Включение и старт {svc}",
                        lambda s=svc: _enable_start(s))
 

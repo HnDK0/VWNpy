@@ -160,7 +160,7 @@ def test_get_active_modes_suffix_no_config(tmp_path, monkeypatch):
 def test_get_active_modes_suffix_no_rules(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     os.makedirs(str(tmp_path), exist_ok=True)
-    with open(str(tmp_path / "config.json"), "w") as f:
+    with open(str(tmp_path / "grpc.json"), "w") as f:
         json.dump({"routing": {"rules": []}}, f)
     assert users.get_active_modes_suffix() == ""
 
@@ -168,7 +168,7 @@ def test_get_active_modes_suffix_no_rules(tmp_path, monkeypatch):
 def test_get_active_modes_suffix_with_rules(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     os.makedirs(str(tmp_path), exist_ok=True)
-    with open(str(tmp_path / "config.json"), "w") as f:
+    with open(str(tmp_path / "grpc.json"), "w") as f:
         json.dump({
             "routing": {
                 "rules": [
@@ -187,7 +187,7 @@ def test_get_active_modes_warp_method_tags(tmp_path, monkeypatch):
     """WARP method-specific tags (warp-native, warp-svc, warp-amnezia) are recognized."""
     monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
     os.makedirs(str(tmp_path), exist_ok=True)
-    with open(str(tmp_path / "config.json"), "w") as f:
+    with open(str(tmp_path / "grpc.json"), "w") as f:
         json.dump({
             "routing": {
                 "rules": [
@@ -201,10 +201,10 @@ def test_get_active_modes_warp_method_tags(tmp_path, monkeypatch):
 
 # ── get_config_name ────────────────────────────────────────
 
-def test_get_config_name_ws(conf, monkeypatch):
+def test_get_config_name_grpc(conf, monkeypatch):
     monkeypatch.setattr(users, "_VWN_FLAG_CACHE", "\U0001f310")
-    name = users.get_config_name("WS", "test")
-    assert "VL-WS" in name
+    name = users.get_config_name("gRPC", "test")
+    assert "VL-gRPC" in name
     assert "test" in name
     assert "\U0001f310" in name
 
@@ -236,9 +236,9 @@ def test_get_config_name_unknown_type(conf, monkeypatch):
 
 def test_get_config_name_empty_label(conf, monkeypatch):
     monkeypatch.setattr(users, "_VWN_FLAG_CACHE", "\U0001f310")
-    name = users.get_config_name("WS", "")
+    name = users.get_config_name("gRPC", "")
     assert name.endswith(" \U0001f310")
-    assert "VL-WS" in name
+    assert "VL-gRPC" in name
 
 
 # ── init_users_file ────────────────────────────────────────
@@ -574,9 +574,9 @@ def test_apply_no_users(tmp_path, monkeypatch):
     users.apply_users_to_configs()
 
 
-def test_apply_writes_to_ws_config(conf, tmp_path, monkeypatch):
+def test_apply_writes_to_grpc_config(conf, tmp_path, monkeypatch):
     os.makedirs(str(tmp_path / "xray"), exist_ok=True)
-    ws = str(tmp_path / "xray" / "config.json")
+    ws = str(tmp_path / "xray" / "grpc.json")
     with open(ws, "w") as f:
         json.dump({"inbounds": [{"settings": {"clients": []}}]}, f)
     users.init_users_file()
@@ -613,7 +613,7 @@ def test_apply_writes_to_reality_config(conf, tmp_path, monkeypatch):
 
 def test_apply_multi_user(conf, tmp_path, monkeypatch):
     os.makedirs(str(tmp_path / "xray"), exist_ok=True)
-    ws = str(tmp_path / "xray" / "config.json")
+    ws = str(tmp_path / "xray" / "grpc.json")
     with open(ws, "w") as f:
         json.dump({"inbounds": [{"settings": {"clients": []}}]}, f)
     users.init_users_file()
@@ -626,7 +626,7 @@ def test_apply_multi_user(conf, tmp_path, monkeypatch):
 
 def test_apply_no_rules_for_flow(conf, tmp_path, monkeypatch):
     os.makedirs(str(tmp_path / "xray"), exist_ok=True)
-    ws = str(tmp_path / "xray" / "config.json")
+    ws = str(tmp_path / "xray" / "grpc.json")
     with open(ws, "w") as f:
         json.dump({"inbounds": [{"settings": {"clients": []}}]}, f)
     users.init_users_file()

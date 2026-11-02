@@ -228,7 +228,7 @@ def test_add_domain_blocked_in_global(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "tor"},
     ]}, "outbounds": [{"tag": "tor", "protocol": "socks"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         import json
         json.dump(cfg, f)
@@ -249,7 +249,7 @@ def test_apply_domains_skips_global(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "port": "0-65535", "outboundTag": "tor"},
     ]}, "outbounds": [{"tag": "tor", "protocol": "socks"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -273,7 +273,7 @@ def test_reapply_routing_global(monkeypatch, tmp_path):
         {"tag": "tor", "protocol": "socks"},
         {"tag": "free"},
     ]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 

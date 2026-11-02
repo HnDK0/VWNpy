@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VWNpy: сбор диагностики сервера (для разбора проблем WS / XHTTP / Reality).
+# VWNpy: сбор диагностики сервера (для разбора проблем gRPC / XHTTP / Reality).
 # Секреты маскируются: UUID, ключи Reality, shortId, пути (показывается только
 # длина и короткий хэш — по нему видно, совпадают ли пути в nginx и xray).
 # Использование:  vwn report [файл]      или      bash collect_report.sh [файл]
@@ -11,7 +11,7 @@ XD="${VWN_XRAY_DIR:-/usr/local/etc/xray}"
 NGX_CONF="${VWN_NGX_CONF:-/etc/nginx/conf.d/xray.conf}"
 XRAY_BIN="${VWN_XRAY_BIN:-/usr/local/bin/xray}"
 LB_PORT="${VWN_LB_PORT:-8443}"
-WS_PORT="${VWN_WS_PORT:-50001}"
+GRPC_PORT="${VWN_GRPC_PORT:-50001}"
 XH_PORT="${VWN_XH_PORT:-50002}"
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -51,7 +51,7 @@ def mask(o):
         for k, v in o.items():
             if k in SECRET_KEYS:
                 out[k] = "<hidden>"
-            elif k == "path" and isinstance(v, str):
+            elif k in ("path", "serviceName") and isinstance(v, str):
                 out[k] = tag(v)
             else:
                 out[k] = mask(v)
@@ -76,10 +76,10 @@ def conf_get(path, key):
     return ""
 
 
-def inbound_path(path, field):
+def inbound_path(path, field, key="path"):
     try:
         ib = json.load(open(path, encoding="utf-8"))["inbounds"][0]
-        return ib["streamSettings"].get(field, {}).get("path", "")
+        return ib["streamSettings"].get(field, {}).get(key, "")
     except Exception:
         return ""
 
@@ -98,7 +98,7 @@ elif cmd == "json":
         print("не удалось прочитать %s: %s" % (sys.argv[2], e))
 elif cmd == "nginx":
     xd = sys.argv[3]
-    paths = {inbound_path(xd + "/config.json", "wsSettings"),
+    paths = {inbound_path(xd + "/grpc.json", "grpcSettings", "serviceName"),
              inbound_path(xd + "/xhttp.json", "xhttpSettings")} - {""}
     txt = open(sys.argv[2], encoding="utf-8", errors="replace").read()
     for p in sorted(paths, key=len, reverse=True):
@@ -119,8 +119,8 @@ elif cmd == "conf":
         print("нет vwn.conf: %s" % e)
 elif cmd == "get":
     print(conf_get(sys.argv[2], sys.argv[3]))
-elif cmd == "wspath":
-    print(inbound_path(sys.argv[2] + "/config.json", "wsSettings"))
+elif cmd == "grpcsvc":
+    print(inbound_path(sys.argv[2] + "/grpc.json", "grpcSettings", "serviceName"))
 elif cmd == "xhpath":
     print(inbound_path(sys.argv[2] + "/xhttp.json", "xhttpSettings"))
 elif cmd == "inconf":
@@ -128,7 +128,7 @@ elif cmd == "inconf":
     p, f = sys.argv[2], sys.argv[3]
     ok = bool(p) and re.search(r"location\s+(=\s+|\^~\s+)?" + re.escape(p) + r"\s*\{",
                                open(f, encoding="utf-8", errors="replace").read()) is not None
-    print("yes" if ok else "no")
+    print("n/a" if not p else "yes" if ok else "no")
 PYEOF
 H() { python3 "$TMP/h.py" "$@"; }
 scrub() { H scrub; }
@@ -148,13 +148,13 @@ code() {
 }
 
 DOMAIN="$(H get "$XD/vwn.conf" DOMAIN)"
-WS_PATH="$(H wspath "$XD")"
+GRPC_SVC="$(H grpcsvc "$XD")"
 XH_PATH="$(H xhpath "$XD")"
-WS_NGX="$(H inconf "$WS_PATH" "$NGX_CONF")"
+GRPC_NGX="$(H inconf "${GRPC_SVC:+/$GRPC_SVC}" "$NGX_CONF")"
 XH_NGX="$(H inconf "$XH_PATH" "$NGX_CONF")"
 
-WS_HDRS=(--http1.1 -H 'Upgrade: websocket' -H 'Connection: Upgrade'
-         -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==')
+# gRPC-проба: POST application/grpc на /<service>/Tun; 200 = дошло до Xray
+GRPC_HDRS=(-X POST -H 'content-type: application/grpc' --data-binary '')
 
 {
 echo "VWNpy report  $(date -u +%FT%TZ)"
@@ -185,7 +185,7 @@ run "nginx модули" sh -c 'nginx -V 2>&1 | tr " " "\n" | grep -E "with-http
 run "nginx -t" sh -c 'nginx -t 2>&1'
 
 sec "Сервисы"
-for s in xray-reality xray-ws xray-xhttp nginx; do
+for s in xray-reality xray-grpc xray-xhttp nginx; do
     run "$s" sh -c "echo \"active=\$(systemctl is-active $s 2>&1) enabled=\$(systemctl is-enabled $s 2>&1)\"; systemctl show $s -p NRestarts -p Result -p ExecMainStatus 2>&1 | tr '\n' ' '; echo"
 done
 run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \$4, \$6}"'
@@ -193,29 +193,32 @@ run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \
 sec "Конфиг (маскированный)"
 printf '\n--- vwn.conf ---\n'
 H conf "$XD/vwn.conf"
-for f in xray-reality.json config.json xhttp.json; do
+for f in xray-reality.json grpc.json xhttp.json; do
     printf '\n--- %s ---\n' "$f"
     H json "$XD/$f"
 done
 printf '\n--- %s ---\n' "$NGX_CONF"
 H nginx "$NGX_CONF" "$XD"
 echo
-echo "путь WS из xray есть в nginx location:    $WS_NGX"
+echo "serviceName gRPC из xray есть в nginx location: $GRPC_NGX"
 echo "путь XHTTP из xray есть в nginx location: $XH_NGX"
 
-sec "Проверки цепочки WS (ожидается 101)"
-W1=""; W2=""; W3=""
-if [ -n "$WS_PATH" ] && [ -n "$DOMAIN" ]; then
-    W1="$(code "${WS_HDRS[@]}" -H "Host: $DOMAIN" "http://127.0.0.1:$WS_PORT$WS_PATH")"
-    W2="$(code "${WS_HDRS[@]}" --resolve "$DOMAIN:$LB_PORT:127.0.0.1" "https://$DOMAIN:$LB_PORT$WS_PATH")"
-    W3="$(code "${WS_HDRS[@]}" --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN:443$WS_PATH")"
-    echo "1) напрямую в xray-ws  127.0.0.1:$WS_PORT:      $W1"
-    echo "2) через nginx         127.0.0.1:$LB_PORT:      $W2"
-    echo "3) через публичный :443 (Reality fallback):     $W3"
+sec "Проверки цепочки gRPC (ожидается 200; без application/grpc — 404)"
+G1=""; G2=""; G3=""; G4=""
+if [ -n "$GRPC_SVC" ] && [ -n "$DOMAIN" ]; then
+    G1="$(code --http2-prior-knowledge "${GRPC_HDRS[@]}" "http://127.0.0.1:$GRPC_PORT/$GRPC_SVC/Tun")"
+    G2="$(code --http2 "${GRPC_HDRS[@]}" --resolve "$DOMAIN:$LB_PORT:127.0.0.1" "https://$DOMAIN:$LB_PORT/$GRPC_SVC/Tun")"
+    G3="$(code --http2 "${GRPC_HDRS[@]}" --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN:443/$GRPC_SVC/Tun")"
+    G4="$(code --http2 --resolve "$DOMAIN:$LB_PORT:127.0.0.1" "https://$DOMAIN:$LB_PORT/$GRPC_SVC/Tun")"
+    echo "1) h2c напрямую в xray-grpc 127.0.0.1:$GRPC_PORT: $G1"
+    echo "2) через nginx (h2)    127.0.0.1:$LB_PORT:      $G2"
+    echo "3) через публичный :443 (Reality fallback):     $G3"
+    echo "4) через nginx БЕЗ application/grpc (ждём 404): $G4"
 else
-    echo "нет WS_PATH или DOMAIN — пропуск"
+    echo "нет GRPC_SERVICE (grpc.json) или DOMAIN — пропуск"
 fi
 
+X2=""
 sec "Проверки цепочки XHTTP (502/504/000 = upstream недоступен)"
 if [ -n "$XH_PATH" ] && [ -n "$DOMAIN" ]; then
     echo "1) h2c напрямую в xray-xhttp 127.0.0.1:$XH_PORT: $(code --http2-prior-knowledge "http://127.0.0.1:$XH_PORT$XH_PATH/")"
@@ -258,7 +261,7 @@ run "ufw" sh -c 'ufw status verbose 2>&1 | head -30'
 run "iptables (INPUT/OUTPUT)" sh -c 'iptables -S 2>&1 | grep -E "^-P|DROP|REJECT" | head -20'
 
 sec "Логи (последние строки)"
-run "journal: xray-ws/xhttp/reality (warning+, 24ч)" sh -c 'journalctl -u xray-ws -u xray-xhttp -u xray-reality --since "24 hours ago" -p warning --no-pager -o short -n 40 2>&1 | cut -c1-220'
+run "journal: xray-grpc/xhttp/reality (warning+, 24ч)" sh -c 'journalctl -u xray-grpc -u xray-xhttp -u xray-reality --since "24 hours ago" -p warning --no-pager -o short -n 40 2>&1 | cut -c1-220'
 run "journal: nginx (24ч)" sh -c 'journalctl -u nginx --since "24 hours ago" --no-pager -o short -n 20 2>&1 | cut -c1-220'
 run "/var/log/xray/error.log" sh -c 'tail -n 25 /var/log/xray/error.log 2>&1 | cut -c1-260'
 run "/var/log/xray/reality-error.log" sh -c 'tail -n 15 /var/log/xray/reality-error.log 2>&1 | cut -c1-260'
@@ -269,22 +272,25 @@ cc="$(cat /proc/sys/net/ipv4/tcp_available_congestion_control 2>/dev/null)"
 if grep -q '"tcpCongestion"' "$XD"/*.json 2>/dev/null && ! echo " $cc " | grep -q ' bbr '; then
     echo "! В конфиге Xray задан tcpCongestion=bbr, а BBR в ядре недоступен → Xray не сможет принять соединения. Лечится: vwn rebuild"
 fi
-[ "$WS_NGX" = "no" ] && echo "! Путь WS в xray не найден среди location nginx → 404. Лечится: vwn rebuild"
+[ "$GRPC_NGX" = "no" ] && echo "! serviceName gRPC из xray не найден среди location nginx → 404. Лечится: vwn rebuild"
 [ "$XH_NGX" = "no" ] && echo "! Путь XHTTP в xray не найден среди location nginx → 404. Лечится: vwn rebuild"
-grep -q 'grpc_pass' "$NGX_CONF" 2>/dev/null || echo "! В nginx для XHTTP нет grpc_pass (proxy_pass ломает stream-one/stream-up)"
+grep -q 'grpc_pass' "$NGX_CONF" 2>/dev/null || echo "! В nginx нет grpc_pass (нужен и для gRPC, и для XHTTP: proxy_pass их ломает)"
+[ -f "$XD/config.json" ] || [ -f /etc/systemd/system/xray-ws.service ] && echo "! Остались следы WebSocket (config.json / xray-ws.service) → выполните vwn rebuild (переход на gRPC)"
 grep -q '"mode": "stream-one"\|"mode": "stream-up"\|"mode": "packet-up"' "$XD/xhttp.json" 2>/dev/null && echo "! Серверный XHTTP закреплён на одном режиме — должен быть auto"
-if ! ss -ltn 2>/dev/null | grep -q ":$WS_PORT "; then echo "! Порт xray-ws $WS_PORT никто не слушает (сервис упал?)"; fi
+if ! ss -ltn 2>/dev/null | grep -q ":$GRPC_PORT "; then echo "! Порт xray-grpc $GRPC_PORT никто не слушает (сервис упал?)"; fi
 if ! ss -ltn 2>/dev/null | grep -q ":$LB_PORT "; then echo "! Порт nginx loopback $LB_PORT никто не слушает"; fi
-w1="${W1%% *}"; w2="${W2%% *}"; w3="${W3%% *}"
-if [ -n "$w1" ]; then
-    if [ "$w1" != "101" ]; then
-        echo "! WS: xray-ws отвечает $w1 (не 101) → проблема в самом Xray (сервис/конфиг/Host/путь), смотрите журнал xray-ws"
-    elif [ "$w2" != "101" ]; then
-        echo "! WS: xray-ws в порядке, но через nginx $w2 → проблема в nginx (location/Upgrade/сертификат/http2), смотрите nginx error.log"
-    elif [ "$w3" != "101" ]; then
-        echo "! WS: nginx в порядке, но через :443 $w3 → проблема в Reality fallback (dest) или фаерволе/порте 443"
+g1="${G1%% *}"; g2="${G2%% *}"; g3="${G3%% *}"; g4="${G4%% *}"
+if [ -n "$g1" ]; then
+    if [ "$g1" != "200" ]; then
+        echo "! gRPC: xray-grpc отвечает $g1 (не 200) → проблема в самом Xray (сервис/конфиг/serviceName), смотрите журнал xray-grpc"
+    elif [ "$g2" != "200" ]; then
+        echo "! gRPC: xray-grpc в порядке, но через nginx $g2 → проблема в nginx (location/grpc_pass/сертификат/http2), смотрите nginx error.log"
+    elif [ "$g3" != "200" ]; then
+        echo "! gRPC: nginx в порядке, но через :443 $g3 → проблема в Reality fallback (dest) или фаерволе/порте 443"
+    elif [ "$g4" != "404" ]; then
+        echo "! gRPC: путь без application/grpc отвечает $g4 (ждём 404) → в location нет проверки \$content_type, путь виден сканерам"
     else
-        echo "WS: цепочка на сервере исправна (101 на всех уровнях) → причина снаружи: клиент (alpn/sni/host/path), CDN или провайдер"
+        echo "gRPC: цепочка на сервере исправна (200 на всех уровнях) → причина снаружи: клиент (alpn=h2/sni/serviceName/mode), CDN (нужен gRPC в Cloudflare) или провайдер"
     fi
 fi
 case "${X2%% *}" in 502|503|504|000) echo "! XHTTP: через nginx ${X2%% *} → nginx не достучался до xray-xhttp (порт/сервис) или нет grpc_pass";; esac

@@ -68,7 +68,7 @@ def test_add_routing_preserves_socks_warp(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "inboundTag": ["socks-warp"], "outboundTag": "warp-native"},
     ]}, "outbounds": [{"tag": "warp-native", "protocol": "wireguard"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -90,7 +90,7 @@ def test_add_routing_correct_position(monkeypatch, tmp_path):
         {"type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block"},
         {"type": "field", "port": "0-65535", "outboundTag": "free"},
     ]}, "outbounds": []}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 

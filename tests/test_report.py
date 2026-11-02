@@ -45,16 +45,16 @@ def test_report_masks_secrets(stack):
     assert "TOPSECRETPRIVKEY" not in txt
     assert p["uuid"] not in txt and not UUID_RE.search(txt)
     assert p["short_id"] not in txt
-    assert p["ws_path"] not in txt and p["xhttp_path"] not in txt
+    assert p["grpc_service"] not in txt and p["xhttp_path"] not in txt
     assert "<path len=" in txt                     # пути заменены хэшем
 
 
 def test_report_paths_match_and_sections(stack):
     tmp_path, _ = stack
     txt = _run(tmp_path)
-    assert "путь WS из xray есть в nginx location:    yes" in txt
+    assert "serviceName gRPC из xray есть в nginx location: yes" in txt
     assert "путь XHTTP из xray есть в nginx location: yes" in txt
-    for sec in ("Проверки цепочки WS", "Проверки цепочки XHTTP", "Ядро / TCP",
+    for sec in ("Проверки цепочки gRPC", "Проверки цепочки XHTTP", "Ядро / TCP",
                 "Исходящая сеть и DNS", "Автовыводы"):
         assert sec in txt
     assert "grpc_pass" in txt
@@ -72,19 +72,23 @@ def test_report_flags_bbr_without_kernel_support(stack):
 
 
 def test_report_path_mismatch_detected(stack):
-    tmp_path, _ = stack
+    tmp_path, p = stack
     conf = tmp_path / "xray.conf"
-    conf.write_text(conf.read_text(encoding="utf-8").replace("location /", "location /zz", 1),
-                    encoding="utf-8")
-    # ломаем именно location WS: подменяем путь в xray-конфиге
-    import json
-    f = tmp_path / "xray" / "config.json"
-    cfg = json.loads(f.read_text(encoding="utf-8"))
-    cfg["inbounds"][0]["streamSettings"]["wsSettings"]["path"] = "/other-path"
-    f.write_text(json.dumps(cfg), encoding="utf-8")
+    # ломаем именно location gRPC: в nginx другой префикс, чем serviceName в xray
+    old = f"location ^~ /{p['grpc_service']} {{"
+    text = conf.read_text(encoding="utf-8")
+    assert old in text
+    conf.write_text(text.replace(old, "location ^~ /zz {"), encoding="utf-8")
     txt = _run(tmp_path)
-    assert "путь WS из xray есть в nginx location:    no" in txt
-    assert "Путь WS в xray не найден среди location nginx" in txt
+    assert "serviceName gRPC из xray есть в nginx location: no" in txt
+    assert "serviceName gRPC из xray не найден среди location nginx" in txt
+
+
+def test_report_flags_legacy_ws_leftovers(stack):
+    tmp_path, _ = stack
+    (tmp_path / "xray" / "config.json").write_text("{}", encoding="utf-8")
+    txt = _run(tmp_path)
+    assert "Остались следы WebSocket" in txt
 
 
 def test_cli_report_command(monkeypatch):

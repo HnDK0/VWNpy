@@ -23,7 +23,7 @@ def dashboard() -> None:
     lines: list[str] = []
 
     svcs = [service_status(s) for s in
-            ("xray-reality.service", "xray-ws.service",
+            ("xray-reality.service", "xray-grpc.service",
              "xray-xhttp.service", "nginx.service")]
     lines.append(f"[bold]Протоколы:[/]    {'  '.join(svcs)}")
 

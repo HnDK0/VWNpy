@@ -164,7 +164,7 @@ def _diag_geoip() -> None:
 def _diag_xray_test() -> None:
     console.print("--- Xray Config Tests ---")
     for label, path in [("Reality", os.path.join(config.XRAY_DIR, "xray-reality.json")),
-                         ("WS", os.path.join(config.XRAY_DIR, "config.json")),
+                         ("gRPC", os.path.join(config.XRAY_DIR, "grpc.json")),
                          ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json"))]:
         if not os.path.isfile(path):
             console.print(f"  {label:7}: {_skip('no config')}")
@@ -180,13 +180,13 @@ def _diag_xray_test() -> None:
 
 
 def _diag_transports() -> None:
-    """Проверка связки nginx→xray для WS/XHTTP и совместимости sockopt с ядром."""
+    """Проверка связки nginx→xray для gRPC/XHTTP и совместимости sockopt с ядром."""
     domain = config.vwn_conf_get("DOMAIN") or ""
     if not domain:
         console.print(f"  {_skip('нет DOMAIN — пропуск')}")
         return
     port = str(config.NGINX_LOOPBACK_PORT)
-    ws = config.vwn_conf_get("WS_PATH") or "/ws"
+    svc = config.vwn_conf_get("GRPC_SERVICE") or ""
     xh = config.vwn_conf_get("XHTTP_PATH") or "/xhttp"
     resolve = f"{domain}:{port}:127.0.0.1"
 
@@ -205,12 +205,18 @@ def _diag_transports() -> None:
                       check=False, capture=True, timeout=12)
         return (r.stdout or "").strip()
 
-    c = _code(["--http1.1", "-H", "Upgrade: websocket", "-H", "Connection: Upgrade",
-               "-H", "Sec-WebSocket-Version: 13",
-               "-H", "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==",
-               f"https://{domain}:{port}{ws}"])
-    console.print(f"  WS (nginx→xray):   "
-                  + (_ok(c) if c == "101" else _fail(c or "нет ответа", "ожидается 101")))
+    if not svc:
+        console.print(f"  gRPC (nginx→xray): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
+    else:
+        # gRPC-запрос на /<service>/Tun: 200 = nginx дошёл до xray-grpc
+        c = _code(["--http2", "-X", "POST", "-H", "content-type: application/grpc",
+                   "--data-binary", "", f"https://{domain}:{port}/{svc}/Tun"])
+        console.print(f"  gRPC (nginx→xray): "
+                      + (_ok(c) if c == "200" else _fail(c or "нет ответа", "ожидается 200")))
+        # без application/grpc путь обязан отдавать 404 (маскировка от сканеров)
+        c = _code(["--http2", f"https://{domain}:{port}/{svc}/Tun"])
+        console.print(f"  gRPC (проба 404):  "
+                      + (_ok(c) if c == "404" else _fail(c or "нет ответа", "ожидается 404")))
 
     c = _code(["--http2", f"https://{domain}:{port}{xh}/"])
     bad = c in ("", "000", "502", "503", "504")
@@ -237,7 +243,7 @@ def run_full_diag() -> None:
 
     console.print("--- Services ---")
     for label, svc in [("xray-reality", "xray-reality.service"),
-                        ("xray-ws", "xray-ws.service"),
+                        ("xray-grpc", "xray-grpc.service"),
                         ("xray-xhttp", "xray-xhttp.service"),
                         ("nginx", "nginx.service"),
                         ("warp-svc", "warp-svc.service"),

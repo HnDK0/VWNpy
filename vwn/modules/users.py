@@ -139,10 +139,10 @@ def _read_json(path: str) -> dict | None:
 
 def get_active_modes_suffix() -> str:
     suffix = ""
-    ws_cfg = _read_json(os.path.join(config.XRAY_DIR, "config.json"))
-    if ws_cfg is None:
+    grpc_cfg = _read_json(os.path.join(config.XRAY_DIR, "grpc.json"))
+    if grpc_cfg is None:
         return ""
-    rules = ws_cfg.get("routing", {}).get("rules", [])
+    rules = grpc_cfg.get("routing", {}).get("rules", [])
 
     def is_global(tag: str) -> bool:
         for r in rules:
@@ -222,8 +222,8 @@ def get_active_modes_suffix() -> str:
 def get_config_name(type_: str, label: str) -> str:
     flag = get_cached_flag()
     modes = get_active_modes_suffix()
-    if type_ == "WS":
-        return f"{flag} VL-WS | {label} {flag}{modes}"
+    if type_ == "gRPC":
+        return f"{flag} VL-gRPC | {label} {flag}{modes}"
     elif type_ == "Reality":
         r_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
         if r_mode == "xhttp":
@@ -367,11 +367,11 @@ def apply_users_to_configs() -> None:
                      for u in users_list]
     clients_x = [{"id": u["uuid"], "email": u["label"]} for u in users_list]
 
-    ws_path = os.path.join(config.XRAY_DIR, "config.json")
-    ws_cfg = _read_json(ws_path)
-    if ws_cfg:
-        ws_cfg["inbounds"][0]["settings"]["clients"] = clients_x
-        _write_json(ws_path, ws_cfg)
+    grpc_path = os.path.join(config.XRAY_DIR, "grpc.json")
+    grpc_cfg = _read_json(grpc_path)
+    if grpc_cfg:
+        grpc_cfg["inbounds"][0]["settings"]["clients"] = clients_x
+        _write_json(grpc_path, grpc_cfg)
 
     xh_path = os.path.join(config.XRAY_DIR, "xhttp.json")
     xh_cfg = _read_json(xh_path)
@@ -386,7 +386,7 @@ def apply_users_to_configs() -> None:
         _write_json(reality_path, r_cfg)
 
     shell.run(["systemctl", "daemon-reload"], check=False)
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
         shell.run(["systemctl", "restart", svc], check=False)
 
 

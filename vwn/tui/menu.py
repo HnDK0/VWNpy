@@ -12,7 +12,7 @@ from vwn.tui.helpers import (add_domain_flow, edit_list_in_editor, ensure_workin
     pick_country, remove_domain_flow, run_cmd, run_task, wait_key)
 from vwn.tui.logs_menu import manage_logs
 from vwn.tui.privacy_menu import manage_privacy
-from vwn.tui.protocols_menu import manage_reality, manage_ws_xhttp
+from vwn.tui.protocols_menu import manage_reality, manage_grpc_xhttp
 from vwn.tui.security_menu import security_menu
 from vwn.tui.tunnel_menu import manage_tunnel
 from vwn.tui.users_menu import manage_users
@@ -25,7 +25,7 @@ def full_remove() -> None:
     if confirm != "yes":
         return
     remove_cert = input("  Оставить SSL сертификат? (Y/n): ").strip().lower() == "n"
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
         subprocess.run(["systemctl", "stop", svc])
         subprocess.run(["systemctl", "disable", svc])
     paths = ["/usr/local/etc/xray", "/etc/nginx/conf.d/xray.conf",
@@ -46,7 +46,7 @@ def _rebuild_configs() -> None:
         console.print(f"[red]{e}[/]")
         return
     run_cmd("systemctl daemon-reload")
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
         run_cmd(f"systemctl restart {svc}")
     console.print("[bright_green]Конфиги пересобраны из текущих параметров[/]")
 
@@ -83,7 +83,7 @@ def _dispatch(choice: int) -> bool:
     elif choice == 2:
         manage_reality()
     elif choice == 3:
-        manage_ws_xhttp()
+        manage_grpc_xhttp()
     elif choice == 4:
         def _warp_add_domain() -> None:
             from vwn.modules.warp import add_domain as _ad
@@ -159,7 +159,7 @@ def _dispatch(choice: int) -> bool:
             st = _st()
             if not st["method"]:
                 console.print("  [yellow]WARP не установлен[/]"); return
-            cfg_path = os.path.join(config.XRAY_DIR, "config.json")
+            cfg_path = os.path.join(config.XRAY_DIR, "grpc.json")
             mode = get_tunnel_mode_from_file(cfg_path, "warp")
             if mode != "OFF":
                 run_task("Остановка WARP", _stop)
@@ -375,7 +375,7 @@ def _dispatch(choice: int) -> bool:
     elif choice == 14:
         _rebuild_configs()
     elif choice == 15:
-        for svc in ["xray-reality", "xray-ws", "xray-xhttp", "nginx"]:
+        for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
             run_cmd(f"systemctl restart {svc}")
         wait_key()
     elif choice == 16:
@@ -393,7 +393,7 @@ def run_menu() -> None:
         items = [
             "Управление пользователями",
             "Reality",
-            "WS / XHTTP",
+            "gRPC / XHTTP",
             "WARP",
             "Psiphon",
             "Tor",

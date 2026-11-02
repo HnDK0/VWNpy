@@ -303,7 +303,7 @@ def install_xray() -> None:
     """
     _create_xray_user()
     # Остановить работающие экземпляры перед заменой бинаря (иначе ETXTBSY)
-    for _svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+    for _svc in ("xray-reality", "xray-grpc", "xray-xhttp"):
         if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
             shell.run(["systemctl", "stop", _svc], check=False)
 
@@ -344,7 +344,7 @@ def install_xray() -> None:
     if not shutil.which("xray"):
         shell.die("xray не установился")
     # Перезапустить юниты, чтобы подхватить новый бинарь
-    for _svc in ("xray-reality", "xray-ws", "xray-xhttp"):
+    for _svc in ("xray-reality", "xray-grpc", "xray-xhttp"):
         if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
             shell.run(["systemctl", "daemon-reload"], check=False)
             shell.run(["systemctl", "restart", _svc], check=False)
@@ -636,8 +636,13 @@ def find_free_port(start: int = 20000, end: int = 20999) -> int:
 
 
 def generate_random_path() -> str:
-    """Случайный WS/XHTTP путь: /v2/api/<32 hex>."""
+    """Случайный XHTTP путь: /v2/api/<32 hex>."""
     return "/v2/api/" + secrets.token_hex(16)
+
+
+def generate_grpc_service() -> str:
+    """Случайный serviceName gRPC: svc<24 hex> (один сегмент, без "/")."""
+    return "svc" + secrets.token_hex(12)
 
 
 def _file_contains(path: str, needle: str) -> bool:
@@ -649,5 +654,6 @@ def _file_contains(path: str, needle: str) -> bool:
 
 if __name__ == "__main__":
     assert generate_random_path().startswith("/v2/api/")
+    assert "/" not in generate_grpc_service()
     assert 50001 == find_free_port(50001, 50001)
     print("system: OK")

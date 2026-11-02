@@ -23,7 +23,7 @@ def connect_host_file_path() -> str:
 
 # Внутренние порты (loopback, в UFW не идут)
 NGINX_LOOPBACK_PORT = 8443
-XRAY_WS_PORT = 50001
+XRAY_GRPC_PORT = 50001
 XRAY_XHTTP_PORT = 50002
 REALITY_PUBLIC_PORT = 443
 

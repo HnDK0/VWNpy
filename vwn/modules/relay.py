@@ -15,7 +15,7 @@ def configure(url: str) -> dict:
     _save_config(parsed)
     ob = _build_outbound(parsed)
     _apply_outbound(ob)
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
         shell.run(["systemctl", "restart", svc], check=False)
     return parsed
 
@@ -26,7 +26,7 @@ def remove() -> None:
     remove_outbound(TAG)
     from vwn.modules._domains import remove_file as _rmd
     _rmd(TAG)
-    for svc in ["xray-reality", "xray-ws", "xray-xhttp"]:
+    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
         shell.run(["systemctl", "restart", svc], check=False)
 
 
@@ -90,7 +90,7 @@ def _apply_outbound(ob: dict) -> None:
     import os as _os
     from vwn.core import config as _cfg
     for path in [_os.path.join(_cfg.XRAY_DIR, p)
-                 for p in ("config.json", "xhttp.json", "xray-reality.json")]:
+                 for p in ("grpc.json", "xhttp.json", "xray-reality.json")]:
         if not _os.path.isfile(path):
             continue
         with open(path) as f:
@@ -122,7 +122,10 @@ def _parse_url(url: str) -> dict:
                     "security": v.get("tls", "none"), "sni": v.get("sni", ""),
                     "pbk": "", "sid": "", "net": v.get("net", "tcp"),
                     "path": v.get("path", "/"),
-                    "ws_host": v.get("host", v.get("add", ""))}
+                    "ws_host": v.get("host", v.get("add", "")),
+                    # vmess-json для grpc кладёт serviceName в поле path
+                    "service": v.get("path", "") if v.get("net") == "grpc" else "",
+                    "grpc_mode": "multi" if v.get("type") == "multi" else "gun"}
         except Exception as e:
             raise ValueError(f"Failed to parse VMess URL: {e}")
 
@@ -136,7 +139,8 @@ def _parse_url(url: str) -> dict:
         raise ValueError(f"Invalid relay URL: {url}")
     result = {"protocol": proto, "host": host, "port": port,
               "uuid": "", "security": "none", "sni": "", "pbk": "",
-              "sid": "", "net": "tcp", "path": "/", "ws_host": host}
+              "sid": "", "net": "tcp", "path": "/", "ws_host": host,
+              "service": "", "grpc_mode": "gun"}
     if proto in ("vless", "trojan"):
         result["uuid"] = parsed.username or ""
         qs = urllib.parse.parse_qs(parsed.query)
@@ -148,6 +152,8 @@ def _parse_url(url: str) -> dict:
         result["path"] = qs.get("path", ["/"])[0]
         if qs.get("host"):
             result["ws_host"] = qs["host"][0]
+        result["service"] = qs.get("serviceName", [""])[0]
+        result["grpc_mode"] = "multi" if qs.get("mode", [""])[0] == "multi" else "gun"
     return result
 
 
@@ -166,6 +172,11 @@ def _build_outbound(cfg: dict) -> dict:
     elif cfg["net"] == "ws":
         stream["wsSettings"] = {"path": cfg["path"],
                                 "headers": {"Host": cfg["ws_host"]}}
+        stream["tlsSettings"] = {"serverName": cfg["sni"],
+                                  "allowInsecure": False}
+    elif cfg["net"] == "grpc":
+        stream["grpcSettings"] = {"serviceName": cfg.get("service", ""),
+                                  "multiMode": cfg.get("grpc_mode") == "multi"}
         stream["tlsSettings"] = {"serverName": cfg["sni"],
                                   "allowInsecure": False}
     else:

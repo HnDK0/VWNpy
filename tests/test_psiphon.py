@@ -124,7 +124,7 @@ def test_install_warp_mode(monkeypatch, tmp_path):
 def test_add_xray_outbound(monkeypatch, tmp_path):
     from vwn.modules import _outbound as ob
     monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
-    cfg_path = tmp_path / "config.json"
+    cfg_path = tmp_path / "grpc.json"
     cfg = {"outbounds": [{"tag": "free", "protocol": "freedom"},
                           {"tag": "block", "protocol": "blackhole"}]}
     with open(cfg_path, "w") as f:
@@ -142,7 +142,7 @@ def test_add_xray_outbound(monkeypatch, tmp_path):
 def test_remove_xray_outbound(monkeypatch, tmp_path):
     from vwn.modules import _outbound as ob
     monkeypatch.setattr(psiphon.config, "XRAY_DIR", str(tmp_path))
-    cfg_path = tmp_path / "config.json"
+    cfg_path = tmp_path / "grpc.json"
     cfg = {"outbounds": [{"tag": "free"}, {"tag": "psiphon"}, {"tag": "block"}],
            "routing": {"rules": [{"outboundTag": "psiphon"}]}}
     with open(cfg_path, "w") as f:
@@ -195,7 +195,7 @@ def test_add_domain(monkeypatch, tmp_path):
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
 
     cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "psiphon"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -212,7 +212,7 @@ def test_remove_domain(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "domain": ["domain:example.com"], "outboundTag": "psiphon"},
     ]}, "outbounds": [{"tag": "psiphon"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     (tmp_path / "psiphon_domains.txt").write_text("example.com\n", encoding="utf-8")
@@ -232,7 +232,7 @@ def test_reapply_routing_global(monkeypatch, tmp_path):
         {"tag": "psiphon", "protocol": "socks"},
         {"tag": "free"},
     ]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -256,7 +256,7 @@ def test_reapply_routing_split(monkeypatch, tmp_path):
         {"tag": "psiphon", "protocol": "socks"},
         {"tag": "free"},
     ]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     (tmp_path / "psiphon_domains.txt").write_text("google.com\n", encoding="utf-8")
@@ -278,7 +278,7 @@ def test_reapply_routing_no_mode(monkeypatch, tmp_path):
         os.remove(vc.vwn_conf_path())
 
     cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "psiphon"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 

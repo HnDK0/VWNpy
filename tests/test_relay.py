@@ -39,6 +39,39 @@ def test_parse_vmess_url():
     assert r["uuid"] == "uuid"
 
 
+def test_parse_vless_grpc_url():
+    r = relay._parse_url("vless://uuid@ex.com:443?security=tls&sni=ex.com"
+                         "&type=grpc&serviceName=my.svc&mode=multi")
+    assert r["net"] == "grpc" and r["service"] == "my.svc" and r["grpc_mode"] == "multi"
+    r = relay._parse_url("vless://uuid@ex.com:443?security=tls&type=grpc&serviceName=s")
+    assert r["grpc_mode"] == "gun"
+
+
+def test_build_outbound_vless_grpc():
+    cfg = relay._parse_url("vless://uuid@ex.com:443?security=tls&sni=ex.com"
+                           "&type=grpc&serviceName=my.svc&mode=multi")
+    st = relay._build_outbound(cfg)["streamSettings"]
+    assert st["network"] == "grpc" and st["security"] == "tls"
+    assert st["grpcSettings"] == {"serviceName": "my.svc", "multiMode": True}
+    assert st["tlsSettings"]["serverName"] == "ex.com"
+
+
+def test_parse_vmess_grpc_service_from_path():
+    import base64, json
+    v = {"add": "v.example.com", "port": 443, "id": "uuid", "tls": "tls",
+         "net": "grpc", "path": "vsvc", "type": "gun"}
+    r = relay._parse_url("vmess://" + base64.b64encode(json.dumps(v).encode()).decode())
+    assert r["service"] == "vsvc" and r["grpc_mode"] == "gun"
+
+
+def test_relay_ws_outbound_still_supported():
+    """Relay — клиент к ЧУЖОМУ серверу: ws-ссылки по-прежнему разбираются."""
+    cfg = relay._parse_url("vless://uuid@ex.com:443?security=tls&sni=ex.com"
+                           "&type=ws&path=%2Fw&host=h.com")
+    st = relay._build_outbound(cfg)["streamSettings"]
+    assert st["network"] == "ws" and st["wsSettings"]["path"] == "/w"
+
+
 def test_build_outbound_socks():
     ob = relay._build_outbound({"protocol": "socks", "host": "1.2.3.4", "port": 1080})
     assert ob["tag"] == "relay"
@@ -109,7 +142,7 @@ def test_add_domain(monkeypatch, tmp_path):
     monkeypatch.setattr(_domains, "XRAY_DIR", str(tmp_path))
 
     cfg = {"routing": {"rules": []}, "outbounds": [{"tag": "relay"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
 
@@ -125,7 +158,7 @@ def test_remove_domain(monkeypatch, tmp_path):
     cfg = {"routing": {"rules": [
         {"type": "field", "domain": ["domain:example.com"], "outboundTag": "relay"},
     ]}, "outbounds": [{"tag": "relay"}]}
-    p = tmp_path / "config.json"
+    p = tmp_path / "grpc.json"
     with open(p, "w") as f:
         json.dump(cfg, f)
     (tmp_path / "relay_domains.txt").write_text("example.com\n", encoding="utf-8")
@@ -149,13 +182,13 @@ def test_reapply_routing_global(monkeypatch, tmp_path):
         {"tag": "free"},
         {"tag": "block", "protocol": "blackhole"},
     ]}
-    for name in ("config.json", "xhttp.json", "xray-reality.json"):
+    for name in ("grpc.json", "xhttp.json", "xray-reality.json"):
         with open(tmp_path / name, "w") as f:
             json.dump(cfg, f)
 
     relay.reapply_routing()
 
-    with open(tmp_path / "config.json") as f:
+    with open(tmp_path / "grpc.json") as f:
         result = json.load(f)
     tags = [o["tag"] for o in result["outbounds"]]
     assert "relay" in tags
@@ -180,12 +213,12 @@ def test_reapply_routing_split(monkeypatch, tmp_path):
         {"tag": "free"},
         {"tag": "block", "protocol": "blackhole"},
     ]}
-    with open(tmp_path / "config.json", "w") as f:
+    with open(tmp_path / "grpc.json", "w") as f:
         json.dump(cfg, f)
 
     relay.reapply_routing()
 
-    with open(tmp_path / "config.json") as f:
+    with open(tmp_path / "grpc.json") as f:
         result = json.load(f)
     split_rules = [r for r in result["routing"]["rules"]
                    if r.get("outboundTag") == "relay" and r.get("domain")]

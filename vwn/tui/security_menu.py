@@ -16,7 +16,7 @@ def _dns_menu() -> None:
         # сбросить кэш резолвера (systemd-resolved)
         shell.run(["resolvectl", "flush-caches"], check=False)
         shell.run(["systemd-resolve", "--flush-caches"], check=False)
-        shell.run(["systemctl", "restart", "xray-reality", "xray-ws", "xray-xhttp"], check=False)
+        shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"], check=False)
 
     while True:
         st = dns_status()
