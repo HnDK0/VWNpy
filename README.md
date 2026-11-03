@@ -23,18 +23,27 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 
 | Протокол | Порт | Transport | Сервис |
 |----------|------|-----------|--------|
-| VLESS + Reality | 443 (публичный) | TCP + XHTTP fallback | `xray-reality` |
+| VLESS + Reality | 443 (публичный) | TCP (Vision) / XHTTP (self-steal, SNI=домен) | `xray-reality` |
 | VLESS + gRPC + TLS | 50001 (loopback) | gRPC (`gun` / `multi`, h2) | `xray-grpc` |
 | VLESS + XHTTP | 50002 (loopback) | XHTTP | `xray-xhttp` |
 
 ```
 Порт 443
-  └─ Xray Reality
-       └─ fallback → nginx 127.0.0.1:8443
-            ├─ /sub/*        — подписки
+  └─ Xray Reality (self-steal: SNI = домен, dest = nginx 127.0.0.1:8443)
+       ├─ прошедшие Reality (Vision) → xray-reality (VLESS)
+       └─ остальное → nginx 127.0.0.1:8443 (настоящий сертификат домена)
+            ├─ /sub/*            — подписки
             ├─ /<serviceName>/*  → xray-grpc :50001 (grpc_pass, h2c)
-            └─ /v2/api/xh/*  → xray-xhttp :50002
+            └─ /<xhttp-path>     → xray-xhttp :50002 (grpc_pass, h2c)
 ```
+
+## Self-steal (Reality)
+
+SNI Reality всегда равен домену сервера (`--domain`): зонд получает ваш реальный
+сайт с сертификатом, совпадающим с SNI. Отдельный «домен-камуфляж»
+(`--reality-dest`) больше не используется; смена домена выполняется через
+`vwn` меню («Сменить домен») или `update_domain()` и требует перевыпущенного
+SSL-сертификата.
 
 ## Переход с WebSocket на gRPC
 
@@ -61,7 +70,6 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 | Флаг | По умолчанию | Описание |
 |------|-------------|----------|
 | `--stub` | `https://httpbin.org/` | Сайт-заглушка для fallback |
-| `--reality-dest` | `microsoft.com:443` | Fallback-домен Reality |
 | `--cert-method` | `standalone` | `standalone` / `cf` / `self` |
 | `--cf-email` | — | Email Cloudflare (при `--cert-method cf`) |
 | `--cf-key` | — | API Key Cloudflare (при `--cert-method cf`) |

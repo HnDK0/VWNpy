@@ -286,7 +286,7 @@ if [ -n "$g1" ]; then
     elif [ "$g2" != "200" ]; then
         echo "! gRPC: xray-grpc в порядке, но через nginx $g2 → проблема в nginx (location/grpc_pass/сертификат/http2), смотрите nginx error.log"
     elif [ "$g3" != "200" ]; then
-        echo "! gRPC: nginx в порядке, но через :443 $g3 → проблема в Reality fallback (dest) или фаерволе/порте 443"
+        echo "! gRPC: nginx в порядке, но через :443 $g3 → проблема в Reality dest (nginx loopback) / SNI / порте 443"
     elif [ "$g4" != "404" ]; then
         echo "! gRPC: путь без application/grpc отвечает $g4 (ждём 404) → в location нет проверки \$content_type, путь виден сканерам"
     else

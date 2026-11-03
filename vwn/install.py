@@ -41,7 +41,7 @@ class InstallOptions:
 
 _VALUE_FLAGS = {
     "--domain": "domain", "--stub": "stub", "--lang": "lang",
-    "--reality-dest": "reality_dest", "--reality-port": "reality_port",
+    "--reality-port": "reality_port",
     "--cert-method": "cert_method", "--cf-email": "cf_email", "--cf-key": "cf_key",
     "--ssh-port": "ssh_port", "--psiphon-country": "psiphon_country",
 }
@@ -188,7 +188,7 @@ def run_install(argv: "list | None" = None) -> None:
     shell.run_task(
         "Генерация конфигов (Reality/gRPC/XHTTP + loopback-nginx + unit-файлы)",
         lambda: xray.provision_configs(
-            opts.domain, opts.stub, opts.reality_dest,
+            opts.domain, opts.stub,
             reality_port=opts.reality_port,
         ),
     )

@@ -91,7 +91,9 @@ def qr(type):
         click.echo("Конфиг не полный (запустите vwn install)", err=True)
         return
 
-    dest_host = (vwn_cfg.vwn_conf_get("REALITY_DEST") or "microsoft.com").split(":")[0]
+    dest_host = (vwn_cfg.vwn_conf_get("REALITY_DEST")
+                 or vwn_cfg.vwn_conf_get("DOMAIN")
+                 or "example.com").split(":")[0]
 
     if type == "reality":
         reality_mode = vwn_cfg.vwn_conf_get("REALITY_MODE") or "tcp"
@@ -119,12 +121,15 @@ def qr(type):
 @cli.command()
 @click.option("--domain", required=True, help="Домен сервера")
 @click.option("--stub", default="https://httpbin.org/", show_default=True, help="URL заглушки")
-@click.option("--reality-dest", default="microsoft.com:443", show_default=True)
 @click.option("--xhttp-mode", default="auto", show_default=True)
-def provision(domain, stub, reality_dest, xhttp_mode):
-    """Сгенерировать все конфиги (Reality + gRPC + XHTTP + loopback-nginx)."""
+def provision(domain, stub, xhttp_mode):
+    """Сгенерировать все конфиги (Reality + gRPC + XHTTP + loopback-nginx).
+
+    SNI Reality всегда равен домену (self-steal); отдельный reality-dest
+    больше не используется.
+    """
     from vwn.modules.xray import provision_configs
-    params = provision_configs(domain, stub, reality_dest, xhttp_mode=xhttp_mode)
+    params = provision_configs(domain, stub, xhttp_mode=xhttp_mode)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
     click.echo(f"Конфиги записаны. UUID={params['uuid']}")

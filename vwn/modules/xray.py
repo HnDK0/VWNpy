@@ -1,8 +1,13 @@
 """Генерация конфигов Xray (Reality / gRPC / XHTTP) и loopback-nginx.
 
-Архитектура (план §2): 443 → Xray(Reality) → fallback 127.0.0.1:8443 (nginx)
-→ location /<serviceName> (grpc_pass) → Xray(gRPC) :50001,
-/xhttp (grpc_pass) → Xray(XHTTP) :50002.
+Архитектура (self-steal): 443 → Xray(Reality, serverNames=[DOMAIN],
+dest=127.0.0.1:8443) → не прошедшие Reality-аутентификацию уходят в nginx
+(loopback, настоящий сертификат DOMAIN) → location /<serviceName> (grpc_pass)
+→ Xray(gRPC) :50001, /xhttp (grpc_pass) → Xray(XHTTP) :50002.
+
+SNI Reality всегда равен DOMAIN: зонд получает ваш реальный сайт с
+сертификатом, совпадающим с SNI. Менять SNI отдельно от домена нельзя —
+используйте update_domain().
 
 Настройки максимально близки к боевым шаблонам оригинального VWN
 (sockopt BBR, routeOnly-sniffing, dns, outbounds туннелей, блокировки
@@ -60,6 +65,15 @@ def _sockopt(public: bool = True) -> dict:
     return opt
 
 
+def _norm_path(path: str) -> str:
+    """Путь XHTTP для nginx-bound inbound'а: с ведущим "/", без хвостового.
+
+    Хвостовой "/" в prefix-location с grpc_pass даёт 301 на запрос без слеша
+    и выдаёт существование пути сканеру.
+    """
+    return "/" + (path or "").strip("/")
+
+
 def _xhttp_server_settings(path: str) -> dict:
     """Серверный XHTTP всегда mode=auto: принимает stream-one/stream-up/
     packet-up. Закреплённый режим режет клиентов (auto по TLS = stream-up).
@@ -112,9 +126,12 @@ def _routing_base() -> dict:
 
 
 def _policy(conn_idle: int = 3600) -> dict:
+    # uplinkOnly/downlinkOnly = 0 официальная документация советует только для
+    # HTTP-браузинга: при half-close соединение рвётся мгновенно. Это общий
+    # прокси, на нём бывают и протоколы с half-close, поэтому 1 с запаса.
     return {"levels": {"0": {
-        "handshake": 15, "connIdle": conn_idle, "uplinkOnly": 0,
-        "downlinkOnly": 0, "bufferSize": 512,
+        "handshake": 15, "connIdle": conn_idle, "uplinkOnly": 1,
+        "downlinkOnly": 1, "bufferSize": 512,
     }}}
 
 
@@ -151,7 +168,12 @@ def reality_config(uuid: str, server_name: str,
                    private_key: str, short_id: str,
                    port: int = config.REALITY_PUBLIC_PORT,
                    fallback_port: int = config.NGINX_LOOPBACK_PORT) -> dict:
-    """Reality на 443 публично, fallback → nginx на localhost:fallback_port."""
+    """Reality на 443 публично (self-steal).
+
+    server_name — собственный домен (DOMAIN): он же в сертификате nginx.
+    Не прошедшие Reality-аутентификацию уходят на dest = nginx на
+    localhost:fallback_port (xver=0: nginx не ждёт PROXY protocol).
+    """
     return {
         "log": _log("/var/log/xray/reality-error.log"),
         "dns": _dns(),
@@ -311,20 +333,15 @@ def update_reality_port(port: int) -> None:
 
 
 def update_reality_sni(dest: str) -> None:
-    """Сменить домен-камуфляж (SNI). Формат: host:port (напр. microsoft.com:443).
-    dest (127.0.0.1:8443) — nginx loopback — не трогает."""
-    path = os.path.join(config.XRAY_DIR, "xray-reality.json")
-    cfg = _read_json(path)
-    if cfg is None:
-        raise RuntimeError("Reality не установлен")
-    host = dest.split(":", 1)[0]
-    ib = cfg["inbounds"][0]
-    ib["streamSettings"]["realitySettings"]["serverNames"] = [host]
-    _write_json(path, cfg)
-    config.vwn_conf_set("REALITY_DEST", dest)
-    shell.run(["systemctl", "restart", "xray-reality"], check=False)
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    """Отключено: при self-steal SNI Reality всегда равен DOMAIN.
+
+    serverNames обязан совпадать с доменом сертификата nginx, иначе зонд
+    увидит расхождение SNI и сертификата. Для смены используйте update_domain().
+    """
+    raise RuntimeError(
+        "Self-steal: SNI Reality всегда равен DOMAIN. "
+        "Чтобы сменить домен, используйте update_domain()."
+    )
 
 
 def set_reality_mode(mode: str, xhttp_path: str | None = None,
@@ -498,6 +515,7 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ExecStart={xray_bin} run -config {config_path}
 Restart=on-failure
+RestartSec=5
 RestartPreventExitStatus=23
 LimitNPROC=10000
 LimitNOFILE=1000000
@@ -538,12 +556,15 @@ def write_xray_units(units_dir: "str | None" = None,
     return written
 
 
-def provision_configs(domain: str, stub: str, reality_dest: str,
+def provision_configs(domain: str, stub: str, reality_dest: str = "",
                       reality_port: int = config.REALITY_PUBLIC_PORT,
                       xhttp_mode: str = "auto",
                       private_key: "str | None" = None,
                       server_name: "str | None" = None) -> dict:
-    """Сгенерировать ВСЕ конфиги сразу (полные, см. план §2).
+    """Сгенерировать ВСЕ конфиги сразу (полные, self-steal).
+
+    Параметр reality_dest оставлен ради совместимости вызовов и не
+    используется: SNI Reality всегда равен domain.
 
     Возвращает словарь с параметрами (uuid, пути), сохранёнными в vwn.conf.
     """
@@ -553,7 +574,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
     os.makedirs(config.XRAY_DIR, exist_ok=True)
     uuid_ = generate_uuid()
     grpc_service = system.generate_grpc_service()
-    xhttp_path = system.generate_random_path()
+    xhttp_path = _norm_path(system.generate_random_path())
     short_id = generate_short_id()
 
     if private_key:
@@ -561,8 +582,8 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
         pub = config.vwn_conf_get("REALITY_PUBKEY") or "unknown"
     else:
         priv, pub = generate_reality_keypair()
-    # Reality: serverNames (клиентский SNI) = sname (домен-камуфляж).
-    sname = server_name or reality_dest.split(":", 1)[0]
+    # Self-steal: serverNames (клиентский SNI) = собственный домен.
+    sname = server_name or domain
     proxy_host = urllib.parse.urlparse(stub).netloc or domain
 
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
@@ -587,7 +608,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str,
     config.vwn_conf_set("UUID", uuid_)
     config.vwn_conf_set("GRPC_SERVICE", grpc_service)
     config.vwn_conf_set("XHTTP_PATH", xhttp_path)
-    config.vwn_conf_set("REALITY_DEST", reality_dest)
+    config.vwn_conf_set("REALITY_DEST", f"{sname}:443")
     config.vwn_conf_set("REALITY_PORT", str(reality_port))
     config.vwn_conf_set("XHTTP_MODE", xhttp_mode)
     config.vwn_conf_set("REALITY_PUBKEY", pub)
@@ -617,20 +638,23 @@ def rebuild_configs() -> None:
     Перезаписывает JSON-конфиги текущими шаблонами (подхватывая новые
     поля из обновлений), затем применяет пользователей из users.conf,
     пересоздаёт nginx loopback и файлы подписок.
+
+    Для уже установленных серверов это же миграция на self-steal: SNI Reality
+    заменяется на DOMAIN. После пересборки нужен restart xray-reality.
     """
     # установки до перехода на gRPC: WS_PATH/xray-ws/config.json → gRPC
     migrate_ws_to_grpc()
 
     domain = config.vwn_conf_get("DOMAIN")
     stub = config.vwn_conf_get("STUB_URL")
-    reality_dest = config.vwn_conf_get("REALITY_DEST")
     uuid_ = config.vwn_conf_get("UUID")
     grpc_service = config.vwn_conf_get("GRPC_SERVICE")
-    xhttp_path = config.vwn_conf_get("XHTTP_PATH")
+    xhttp_path = _norm_path(config.vwn_conf_get("XHTTP_PATH") or "")
     short_id = config.vwn_conf_get("SHORT_ID")
     reality_port = int(config.vwn_conf_get("REALITY_PORT") or config.REALITY_PUBLIC_PORT)
     xhttp_mode = config.vwn_conf_get("XHTTP_MODE") or "auto"
-    if not all([domain, stub, reality_dest, uuid_, grpc_service, xhttp_path, short_id]):
+    if not all([domain, stub, uuid_, grpc_service, config.vwn_conf_get("XHTTP_PATH"),
+                short_id]):
         raise RuntimeError("Конфиг неполный — сначала выполните vwn install")
 
     r_cfg = _read_json(os.path.join(config.XRAY_DIR, "xray-reality.json"))
@@ -642,7 +666,10 @@ def rebuild_configs() -> None:
     if not private_key:
         raise RuntimeError("Reality private_key не найден в текущем конфиге")
 
-    server_name = reality_dest.split(":", 1)[0]
+    # Self-steal: SNI Reality = DOMAIN.
+    server_name = domain
+    config.vwn_conf_set("REALITY_DEST", f"{domain}:443")
+    config.vwn_conf_set("XHTTP_PATH", xhttp_path)
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
                          uuid_, server_name,
                          private_key, short_id, port=reality_port)
@@ -682,7 +709,8 @@ def _re_render_nginx(**overrides) -> None:
     stub = overrides.get("stub") or config.vwn_conf_get("STUB_URL") or "https://example.com"
     grpc_service = (overrides.get("grpc_service")
                     or config.vwn_conf_get("GRPC_SERVICE") or "grpc")
-    xhttp_path = overrides.get("xhttp_path") or config.vwn_conf_get("XHTTP_PATH") or "/xhttp"
+    xhttp_path = _norm_path(overrides.get("xhttp_path")
+                            or config.vwn_conf_get("XHTTP_PATH") or "/xhttp")
     proxy_host = overrides.get("proxy_host") or urlparse(stub).netloc or domain
     try:
         system._write_nginx_main_conf()
@@ -780,7 +808,7 @@ def update_xhttp_path(path: str) -> None:
     cfg = _read_json(p)
     if cfg is None:
         raise RuntimeError("XHTTP не установлен")
-    path = "/" + path.lstrip("/")
+    path = _norm_path(path)
     ib = cfg.get("inbounds", [{}])[0]
     ss = ib.setdefault("streamSettings", {})
     xhs = ss.setdefault("xhttpSettings", {})
@@ -795,7 +823,21 @@ def update_xhttp_path(path: str) -> None:
 
 
 def update_domain(domain: str) -> None:
+    """Сменить домен. При self-steal он же SNI Reality, поэтому serverNames
+    обновляется вместе с nginx и подписками.
+
+    Порядок: сначала выпустите сертификат на новый домен (renew_ssl),
+    затем вызывайте update_domain.
+    """
+    validate_domain(domain)
     config.vwn_conf_set("DOMAIN", domain)
+    config.vwn_conf_set("REALITY_DEST", f"{domain}:443")
+    p = os.path.join(config.XRAY_DIR, "xray-reality.json")
+    cfg = _read_json(p)
+    if cfg is not None:
+        cfg["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"] = [domain]
+        _write_json(p, cfg)
+        shell.run(["systemctl", "restart", "xray-reality"], check=False)
     _re_render_nginx(domain=domain)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()

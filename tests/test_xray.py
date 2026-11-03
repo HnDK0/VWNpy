@@ -90,8 +90,8 @@ def test_provision_writes_valid_configs(paths):
     )
     rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
     assert rc["inbounds"][0]["port"] == 443
-    # serverNames = SNI-домен (microsoft.com), а не домен сервера
-    assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"] == ["microsoft.com"]
+    # self-steal: serverNames = домен сервера, а не внешний камуфляж
+    assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"] == ["vpn.example.com"]
     # Fallback dest → nginx loopback (не-Reality трафик)
     assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"
 
@@ -114,7 +114,7 @@ def test_provision_writes_valid_configs(paths):
     assert "grpc_pass grpc://127.0.0.1:50001" in ng
     assert 'if ($content_type !~ "^application/grpc")' in ng
     assert "grpc_read_timeout 1w" in ng and "client_body_timeout 1w" in ng
-    assert "grpc_socket_keepalive on" in ng    # proxy_pass/WebSocket для loopback-inbound'ов больше нет
+    assert "grpc_socket_keepalive on" not in ng    # строка удалена из шаблона
     assert "proxy_pass http://127.0.0.1:50001" not in ng
     assert "Upgrade" not in ng and "connection_upgrade" not in ng
     # X-Forwarded-For в gRPC-location даёт warning в Xray на каждое соединение
