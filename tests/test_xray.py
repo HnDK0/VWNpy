@@ -113,9 +113,8 @@ def test_provision_writes_valid_configs(paths):
     assert f"location ^~ /{svc} {{" in ng
     assert "grpc_pass grpc://127.0.0.1:50001" in ng
     assert 'if ($content_type !~ "^application/grpc")' in ng
-    assert "grpc_read_timeout 1h" in ng and "client_body_timeout 1h" in ng
-    assert "grpc_socket_keepalive on" in ng
-    # proxy_pass/WebSocket для loopback-inbound'ов больше нет
+    assert "grpc_read_timeout 85s" in ng and "client_body_timeout 80s" in ng
+    assert "grpc_socket_keepalive on" in ng    # proxy_pass/WebSocket для loopback-inbound'ов больше нет
     assert "proxy_pass http://127.0.0.1:50001" not in ng
     assert "Upgrade" not in ng and "connection_upgrade" not in ng
     # X-Forwarded-For в gRPC-location даёт warning в Xray на каждое соединение
@@ -125,11 +124,10 @@ def test_provision_writes_valid_configs(paths):
     assert "grpc_pass grpc://127.0.0.1:50002" in ng     # XHTTP только grpc_pass (h2c)
     assert "proxy_pass http://127.0.0.1:50002" not in ng  # HTTP/1.1 ломает stream-up/one
     assert "grpc_buffer_size 64k" in ng
-    assert "grpc_read_timeout 315s" in ng
-    assert "client_body_timeout 5m" in ng
+    assert "grpc_read_timeout 85s" in ng
+    assert "client_body_timeout 80s" in ng
     assert "keepalive_timeout 5m" in ng
-    assert "root /usr/local/etc/xray" in ng              # подписки (root, файлы в sub/)
-    assert "proxy_pass https://www.openstreetmap.org/" in ng
+    assert "root /usr/local/etc/xray" in ng              # подписки (root, файлы в sub/)    assert "proxy_pass https://www.openstreetmap.org/" in ng
     assert "Strict-Transport-Security" in ng
 
     # 3 независимых unit-файла (reality/grpc/xhttp)

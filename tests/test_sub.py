@@ -53,7 +53,8 @@ def test_generate_grpc_url():
     assert "mode=gun" in url                       # по умолчанию — совместимый gun
     assert "authority=vpn.example.com" in url      # через CDN :authority = домен, не IP
     assert "sni=vpn.example.com" in url
-    assert "type=ws" not in url and "path=" not in url
+    assert "type=ws" not in url
+    assert "path=svcabc123" in url
 
 
 def test_generate_grpc_url_multi_and_cdn_host():
@@ -173,7 +174,7 @@ def test_grpc_url_alpn_h2_only():
 def test_grpc_url_encodes_service_name():
     u = sub.generate_grpc_url("u", "h", 443, "a.b-c_d", "d.example.com", "n")
     assert "serviceName=a.b-c_d" in u
-
+    assert "path=a.b-c_d" in u
 
 def test_user_sub_contains_grpc_not_ws(conf, tmp_path):
     sub.build_user_sub_file("550e8400-e29b-41d4-a716-446655440000", "user1", "TOKEN1",

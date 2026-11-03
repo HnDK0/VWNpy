@@ -63,11 +63,10 @@ def generate_grpc_url(
         f"vless://{uuid_val}@{connect_host}:{port}"
         f"?encryption=none&security=tls"
         f"&sni={domain}&fp=chrome&alpn=h2"
-        f"&type=grpc&serviceName={_urlencode(service_name)}"
+        f"&type=grpc&path={_urlencode(service_name)}&serviceName={_urlencode(service_name)}"
         f"&mode={mode}&authority={domain}"
         f"#{_urlencode(name)}"
     )
-
 
 def generate_xhttp_url(
     uuid_val: str,
