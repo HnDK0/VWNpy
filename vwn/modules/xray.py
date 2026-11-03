@@ -719,10 +719,10 @@ def read_grpc_xhttp_info() -> dict:
         ss = ib.get("streamSettings", {})
         info["xhttp_path"] = ss.get("xhttpSettings", {}).get("path", "")
         info["xhttp_port"] = ib.get("port")
-        info["xhttp_mode"] = ss.get("xhttpSettings", {}).get("mode", "auto")
     else:
         info["xhttp_path"] = config.vwn_conf_get("XHTTP_PATH") or ""
-        info["xhttp_mode"] = config.vwn_conf_get("XHTTP_MODE") or "auto"
+    # mode — клиентский; серверный inbound всегда auto (см. _xhttp_server_settings)
+    info["xhttp_mode"] = config.vwn_conf_get("XHTTP_MODE") or "auto"
     return info
 
 

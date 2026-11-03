@@ -287,6 +287,8 @@ def test_set_xhttp_mode_does_not_pin_server(paths, monkeypatch):
     assert xc["inbounds"][0]["streamSettings"]["xhttpSettings"]["mode"] == "auto"
     assert config.vwn_conf_get("XHTTP_MODE") == "stream-one"
     assert calls == []          # перезапуск xray не нужен
+    # строка статуса берёт клиентский режим из conf, а не auto из серверного JSON
+    assert xray.read_grpc_xhttp_info()["xhttp_mode"] == "stream-one"
 
 
 # ── gRPC: управление (serviceName / mode / отключение) ──────────────
