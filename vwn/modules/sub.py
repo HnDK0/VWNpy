@@ -17,6 +17,12 @@ from vwn.modules import users
 SUB_DIR = "/usr/local/etc/xray/sub"
 
 
+def _reality_xhttp_mode(mode: str) -> str:
+    # клиентский auto с Reality ломается в новых Xray (#5635); серверный
+    # auto принимает stream-one, поэтому указываем его явно.
+    return mode if mode and mode != "auto" else "stream-one"
+
+
 def generate_reality_url(
     uuid_val: str,
     server_ip: str,
@@ -36,9 +42,7 @@ def generate_reality_url(
     )
     if mode == "xhttp":
         path = xhttp_path or "/r"
-        # клиентский auto с Reality ломается в новых Xray (#5635); серверный
-        # auto принимает stream-one, поэтому указываем его явно.
-        rmode = xhttp_extra if xhttp_extra and xhttp_extra != "auto" else "stream-one"
+        rmode = _reality_xhttp_mode(xhttp_extra)
         extra = f"&path={_urlencode(path)}&mode={rmode}&host={dest_host}"
         return f"{base}&type=xhttp{extra}#{_urlencode(name)}"
     return f"{base}&type=tcp&flow=xtls-rprx-vision#{_urlencode(name)}"
@@ -113,7 +117,7 @@ def write_sub_file(output_dir: str, label: str, token: str, lines: list[str]) ->
     os.makedirs(output_dir, exist_ok=True)
     safe = safe_label(label)
     for f in os.listdir(output_dir):
-        if f.startswith(safe + "_") and (f.endswith(".txt") or f.endswith(".html")):
+        if users.is_sub_file_for(f, safe):
             os.remove(os.path.join(output_dir, f))
     filename = sub_filename(label, token)
     path = os.path.join(output_dir, filename)
@@ -125,6 +129,197 @@ def write_sub_file(output_dir: str, label: str, token: str, lines: list[str]) ->
     return path
 
 
+def build_mihomo_proxies(
+    uuid_val: str,
+    label: str,
+    domain: str,
+    connect_host: str,
+    server_ip: str,
+    grpc_service: str,
+    grpc_mode: str,
+    xhttp_path: str,
+    xhttp_mode: str,
+    reality_port_str: str,
+    reality_dest: str,
+    pub_key: str,
+    short_id: str,
+    reality_mode: str,
+    xhttp_path_reality: str,
+    xhttp_extra_mode: str,
+    disabled: set[str],
+) -> list[dict]:
+    proxies: list[dict] = []
+
+    if grpc_service and "grpc" not in disabled:
+        proxies.append({
+            "name": users.get_config_name("gRPC", label),
+            "type": "vless",
+            "server": connect_host,
+            "port": 443,
+            "uuid": uuid_val,
+            "udp": True,
+            "tls": True,
+            "servername": domain,
+            "client-fingerprint": "chrome",
+            "network": "grpc",
+            "grpc-opts": {
+                "grpc-service-name": grpc_service,
+                "ping-interval": 15,
+            },
+        })
+
+    if xhttp_path and "xhttp" not in disabled:
+        proxies.append({
+            "name": users.get_config_name("XHTTP", label),
+            "type": "vless",
+            "server": connect_host,
+            "port": 443,
+            "uuid": uuid_val,
+            "udp": True,
+            "tls": True,
+            "servername": domain,
+            "client-fingerprint": "chrome",
+            "network": "xhttp",
+            "alpn": ["h2"],
+            "xhttp-opts": {
+                "path": xhttp_path,
+                "mode": xhttp_mode or "auto",
+            },
+        })
+
+    if pub_key and short_id and "reality" not in disabled:
+        dest_host = reality_dest.split(":", 1)[0]
+        if reality_mode == "xhttp":
+            proxies.append({
+                "name": users.get_config_name("Reality", label),
+                "type": "vless",
+                "server": server_ip,
+                "port": int(reality_port_str),
+                "uuid": uuid_val,
+                "udp": True,
+                "tls": True,
+                "servername": dest_host,
+                "client-fingerprint": "chrome",
+                "reality-opts": {
+                    "public-key": pub_key,
+                    "short-id": short_id,
+                    "support-x25519mlkem768": True,
+                },
+                "network": "xhttp",
+                "xhttp-opts": {
+                    "path": xhttp_path_reality or "/r",
+                    "mode": _reality_xhttp_mode(xhttp_extra_mode),
+                },
+            })
+        else:
+            proxies.append({
+                "name": users.get_config_name("Reality", label),
+                "type": "vless",
+                "server": server_ip,
+                "port": int(reality_port_str),
+                "uuid": uuid_val,
+                "udp": True,
+                "flow": "xtls-rprx-vision",
+                "encryption": "",
+                "tls": True,
+                "servername": dest_host,
+                "client-fingerprint": "chrome",
+                "reality-opts": {
+                    "public-key": pub_key,
+                    "short-id": short_id,
+                    "support-x25519mlkem768": True,
+                },
+                "network": "tcp",
+            })
+
+    return proxies
+
+
+def _yaml_str(val) -> str:
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, list):
+        return "[" + ", ".join(_yaml_str(v) for v in val) + "]"
+    if isinstance(val, dict):
+        lines = []
+        for k, v in val.items():
+            if isinstance(v, dict):
+                lines.append(f"    {k}:")
+                for kk, vv in v.items():
+                    lines.append(f"      {kk}: {_yaml_str(vv)}")
+            elif isinstance(v, list):
+                lines.append(f"    {k}: {_yaml_str(v)}")
+            else:
+                lines.append(f"    {k}: {_yaml_str(v)}")
+        return "\n".join(lines)
+    s = str(val)
+    reserved = {"y", "n", "yes", "no", "true", "false", "on", "off", "null", "~"}
+    needs_quotes = (
+        not s
+        or " " in s
+        or ":" in s
+        or "#" in s
+        or s.lower() in reserved
+        or s[0] in "-?:,[]{}#&*!|>'\"%@`"
+    )
+    if needs_quotes:
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return s
+
+
+def generate_mihomo_yaml(proxies: list[dict]) -> str:
+    if not proxies:
+        return "proxies: []\n"
+    lines = ["proxies:"]
+    for p in proxies:
+        lines.append(f"  - name: {_yaml_str(p['name'])}")
+        lines.append(f"    type: {p['type']}")
+        lines.append(f"    server: {p['server']}")
+        lines.append(f"    port: {p['port']}")
+        lines.append(f"    uuid: {p['uuid']}")
+        lines.append(f"    udp: {str(p.get('udp', True)).lower()}")
+        if "flow" in p:
+            lines.append(f"    flow: {p['flow']}")
+        if "encryption" in p:
+            lines.append(f'    encryption: "{p["encryption"]}"')
+        lines.append(f"    tls: {str(p.get('tls', True)).lower()}")
+        lines.append(f"    servername: {p['servername']}")
+        lines.append(f"    client-fingerprint: {p.get('client-fingerprint', 'chrome')}")
+        if "reality-opts" in p:
+            lines.append("    reality-opts:")
+            for k, v in p["reality-opts"].items():
+                lines.append(f"      {k}: {_yaml_str(v)}")
+        if "network" in p:
+            lines.append(f"    network: {p['network']}")
+        if "alpn" in p:
+            lines.append(f"    alpn: {_yaml_str(p['alpn'])}")
+        if "grpc-opts" in p:
+            lines.append("    grpc-opts:")
+            for k, v in p["grpc-opts"].items():
+                lines.append(f"      {k}: {_yaml_str(v)}")
+        if "xhttp-opts" in p:
+            lines.append("    xhttp-opts:")
+            for k, v in p["xhttp-opts"].items():
+                lines.append(f"      {k}: {_yaml_str(v)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_sub_yaml(output_dir: str, label: str, token: str, proxies: list[dict]) -> str:
+    os.makedirs(output_dir, exist_ok=True)
+    safe = safe_label(label)
+    filename = f"{safe}_{token}.yaml"
+    path = os.path.join(output_dir, filename)
+    content = generate_mihomo_yaml(proxies)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    os.chmod(path, 0o644)
+    return path
+
+
 def build_user_html_page(
     template_path: str,
     output_path: str,
@@ -132,6 +327,7 @@ def build_user_html_page(
     label: str,
     sub_url: str,
     lines: list[str],
+    sub_yaml_url: str = "",
     page_title: str = "",
     cdn_ip: str = "",
     domain: str = "",
@@ -247,6 +443,7 @@ def build_user_html_page(
         "{{USER_LABEL}}": html_lib.escape(label),
         "{{PROTO_TAGS}}": proto_tags,
         "{{SUB_URL}}": html_lib.escape(sub_url),
+        "{{SUB_YAML_URL}}": html_lib.escape(sub_yaml_url),
         "{{CONFIGS_HTML}}": configs_html,
         "{{ALL_CONFIGS_HTML}}": all_configs_html,
         "{{DNS_TAB_BTN}}": dns_tab_btn,
@@ -342,8 +539,22 @@ def build_user_sub_file(
 
     write_sub_file(output_dir, label, token, lines)
 
+    # YAML-подписка для mihomo (с ping-interval и т.д.)
+    reality_mode = get_conf_or_none("REALITY_MODE") or "tcp"
+    xhttp_path_reality = get_conf_or_none("REALITY_XHTTP_PATH") or ""
+    xhttp_extra_mode = get_conf_or_none("REALITY_XHTTP_MODE") or "auto"
+    proxies = build_mihomo_proxies(
+        uuid_val, label, domain, connect_host, server_ip,
+        grpc_service, grpc_mode, xhttp_path, xhttp_mode,
+        reality_port_str, reality_dest, pub_key, short_id,
+        reality_mode, xhttp_path_reality, xhttp_extra_mode,
+        disabled,
+    )
+    write_sub_yaml(output_dir, label, token, proxies)
+
     sub_url = f"https://{domain}/sub/{sub_filename(label, token)}"
     safe = safe_label(label)
+    sub_yaml_url = f"https://{domain}/sub/{safe}_{token}.yaml"
     html_path = os.path.join(output_dir, f"{safe}_{token}.html")
 
     template_path = template_dir or os.path.join(
@@ -351,6 +562,7 @@ def build_user_sub_file(
     )
     build_user_html_page(
         template_path, html_path, uuid_val, label, sub_url, lines,
+        sub_yaml_url=sub_yaml_url,
         domain=domain, server_ip=server_ip, cdn_ip=cdn_ip,
     )
 
@@ -361,6 +573,7 @@ def write_sub_map(conf_dir: str, country: str = "RU") -> str:
         "# Cloudflare real IP restore\n"
         "map $uri $sub_label {\n"
         f'    ~^/sub/(?<label>[A-Za-z0-9_-]+)_[A-Za-z0-9]+\\.txt$  "{country} VLESS | $label";\n'
+        f'    ~^/sub/(?<label>[A-Za-z0-9_-]+)_[A-Za-z0-9]+\\.yaml$ "{country} VLESS | $label";\n'
         f'    default                                                "{country} VLESS";\n'
         "}\n"
     )

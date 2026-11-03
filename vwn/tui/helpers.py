@@ -46,8 +46,9 @@ def sub_status() -> str:
     sub_dir = "/usr/local/etc/xray/sub"
     if not os.path.isdir(sub_dir):
         return "[red]НЕТ ПОДП[/]"
-    txts = [f for f in os.listdir(sub_dir) if f.endswith(".txt")]
-    return f"[bright_green]{len(txts)} подп[/]" if txts else "[yellow]0 подп[/]"
+    bases = {os.path.splitext(f)[0] for f in os.listdir(sub_dir)
+             if f.endswith(".txt") or f.endswith(".yaml")}
+    return f"[bright_green]{len(bases)} подп[/]" if bases else "[yellow]0 подп[/]"
 
 
 def onoff(active: bool) -> str:

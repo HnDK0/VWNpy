@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 
 import pytest
 
@@ -114,18 +115,20 @@ def test_write_sub_map(tmp_path):
     content = open(path).read()
     assert "DE VLESS" in content
     assert "$sub_label" in content
+    assert "\\.yaml$" in content
 
 
 def test_build_user_html_page(tmp_path):
     tpl = tmp_path / "user_page.html"
     tpl.write_text(
-        "<html>{{PAGE_TITLE}} {{SUB_URL}} {{CONFIGS_HTML}}</html>"
+        "<html>{{PAGE_TITLE}} {{SUB_URL}} {{SUB_YAML_URL}} {{CONFIGS_HTML}}</html>"
     )
     out = tmp_path / "out.html"
     sub.build_user_html_page(
         str(tpl), str(out),
         "uuid-1", "user1", "https://vpn.example.com/sub/user1_TOKEN1.txt",
         ["vless://abc@1.2.3.4:443?security=reality#test"],
+        sub_yaml_url="https://vpn.example.com/sub/user1_TOKEN1.yaml",
         page_title="user1 \xb7 vpn.example.com",
         server_ip="1.2.3.4",
     )
@@ -133,6 +136,7 @@ def test_build_user_html_page(tmp_path):
     assert "user1" in html
     assert "vpn.example.com" in html
     assert "vless://abc@1.2.3.4:443?security=reality#test" in html
+    assert "user1_TOKEN1.yaml" in html
 
 
 def test_build_user_sub_file(conf, tmp_path, monkeypatch):
@@ -156,6 +160,10 @@ def test_build_user_sub_file(conf, tmp_path, monkeypatch):
     assert len(found_html) == 1
     html = found_html[0].read_text(encoding="utf-8")
     assert "vpn.example.com" in html
+    # .yaml created
+    yaml_path = tmp_path / "user1_TOKEN1.yaml"
+    assert yaml_path.exists()
+    assert "proxies:" in yaml_path.read_text(encoding="utf-8")
 
 
 # ── XHTTP/gRPC ссылки: ALPN и режим клиента ─────────────────────────
@@ -211,3 +219,91 @@ def test_reality_xhttp_url_never_auto(given, expected):
     u = sub.generate_reality_url("u", "1.2.3.4", 443, "sid", "microsoft.com", "pbk", "n",
                                  mode="xhttp", xhttp_path="/r", xhttp_extra=given)
     assert f"mode={expected}" in u and "mode=auto" not in u
+
+
+def test_generate_mihomo_yaml_grpc():
+    proxies = [{"name": "gRPC", "type": "vless", "server": "example.com", "port": 443,
+                "uuid": "u", "udp": True, "tls": True, "servername": "example.com",
+                "client-fingerprint": "chrome", "network": "grpc",
+                "grpc-opts": {"grpc-service-name": "svc", "ping-interval": 15}}]
+    y = sub.generate_mihomo_yaml(proxies)
+    assert "proxies:" in y
+    assert "ping-interval: 15" in y
+    assert "grpc-service-name: svc" in y
+
+
+def test_generate_mihomo_yaml_reality():
+    proxies = [{"name": "Reality", "type": "vless", "server": "1.2.3.4", "port": 443,
+                "uuid": "u", "udp": True, "flow": "xtls-rprx-vision", "encryption": "",
+                "tls": True, "servername": "dest.com", "client-fingerprint": "chrome",
+                "reality-opts": {"public-key": "pbk", "short-id": "sid",
+                                 "support-x25519mlkem768": True},
+                "network": "tcp"}]
+    y = sub.generate_mihomo_yaml(proxies)
+    assert "support-x25519mlkem768: true" in y
+    assert "flow: xtls-rprx-vision" in y
+
+
+def test_build_mihomo_proxies():
+    proxies = sub.build_mihomo_proxies(
+        "uuid", "label", "domain.com", "cdn.com", "1.2.3.4",
+        "svc", "gun", "/xhttp", "auto", "443", "dest.com", "pbk", "sid",
+        "tcp", "", "auto", set(),
+    )
+    assert len(proxies) >= 2
+    grpc = [p for p in proxies if p.get("network") == "grpc"][0]
+    assert grpc["grpc-opts"]["ping-interval"] == 15
+
+
+@pytest.mark.parametrize("given,expected", [
+    ("auto", "stream-one"), ("", "stream-one"),
+    ("stream-one", "stream-one"), ("packet-up", "packet-up"),
+])
+def test_mihomo_reality_xhttp_mode_never_auto(given, expected):
+    proxies = sub.build_mihomo_proxies(
+        "u", "label", "d.com", "c.com", "1.2.3.4",
+        "", "", "", "", "443", "dest.com", "pbk", "sid",
+        "xhttp", "/r", given, set(),
+    )
+    y = sub.generate_mihomo_yaml(proxies)
+    assert f"mode: {expected}" in y and "mode: auto" not in y
+
+
+def test_generate_mihomo_yaml_empty():
+    assert sub.generate_mihomo_yaml([]) == "proxies: []\n"
+
+
+def test_generate_mihomo_yaml_escapes_quotes():
+    proxies = [{"name": 'a "b c', "type": "vless", "server": "s", "port": 443,
+                "uuid": "u", "udp": True, "tls": True, "servername": "s",
+                "client-fingerprint": "chrome"}]
+    y = sub.generate_mihomo_yaml(proxies)
+    assert 'name: "a \\"b c"' in y
+
+
+def test_generate_mihomo_yaml_quotes_reserved():
+    proxies = [{"name": "yes", "type": "vless", "server": "s", "port": 443,
+                "uuid": "u", "udp": True, "tls": True, "servername": "s",
+                "client-fingerprint": "chrome"}]
+    assert 'name: "yes"' in sub.generate_mihomo_yaml(proxies)
+
+
+def test_write_sub_file_removes_stale_and_keeps_other_prefix(tmp_path):
+    stale = tmp_path / "user1_OLD.yaml"
+    other = tmp_path / "user1_2_OLD.txt"   # чужой label с тем же префиксом
+    stale.write_text("old")
+    other.write_text("other")
+    sub.write_sub_file(str(tmp_path), "user1", "TOKEN1", ["vless://x"])
+    assert not stale.exists()
+    assert other.exists()
+
+
+def test_write_sub_yaml_creates_file(tmp_path):
+    path = sub.write_sub_yaml(str(tmp_path), "user one", "TOK", [])
+    assert os.path.basename(path) == "userone_TOK.yaml"
+    assert os.path.exists(path)
+
+
+def test_sub_yaml_filename_matches_nginx_regex():
+    name = f"{sub.safe_label('Hello World')}_{sub.generate_token()}.yaml"
+    assert re.fullmatch(r"/sub/[A-Za-z0-9_-]+_[A-Za-z0-9]+\.yaml", "/sub/" + name)

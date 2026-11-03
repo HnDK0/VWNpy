@@ -128,6 +128,8 @@ def test_provision_writes_valid_configs(paths):
     assert "client_body_timeout 1w" in ng
     assert "keepalive_timeout 30m" in ng
     assert "root /usr/local/etc/xray" in ng              # подписки (root, файлы в sub/)
+    # yaml-подписки для mihomo (regex должен совпадать с именем файла)
+    assert "location ~ ^/sub/[A-Za-z0-9_-]+_[A-Za-z0-9]+\\.yaml$" in ng
     assert "proxy_pass https://www.openstreetmap.org/" in ng
     assert "Strict-Transport-Security" in ng
     # 3 независимых unit-файла (reality/grpc/xhttp)

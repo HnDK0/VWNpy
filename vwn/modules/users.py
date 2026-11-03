@@ -48,6 +48,14 @@ def sub_filename(label: str, token: str) -> str:
     return f"{safe_label(label)}_{token}.txt"
 
 
+_SUB_FILE_RE = re.compile(r"^_[A-Za-z0-9]+\.(?:txt|html|yaml)$")
+
+
+def is_sub_file_for(fname: str, safe: str) -> bool:
+    """Файл подписки именно этого label (токен не даёт зацепить чужой префикс)."""
+    return fname.startswith(safe) and bool(_SUB_FILE_RE.match(fname[len(safe):]))
+
+
 def generate_token(length: int = 32) -> str:
     return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
@@ -281,7 +289,7 @@ def remove_user(line_no: int) -> bool:
     safe = safe_label(label)
     if os.path.isdir(SUB_DIR):
         for f in os.listdir(SUB_DIR):
-            if f.startswith(safe + "_") and (f.endswith(".txt") or f.endswith(".html")):
+            if is_sub_file_for(f, safe):
                 os.remove(os.path.join(SUB_DIR, f))
     lines.pop(line_no - 1)
     _write_lines(USERS_FILE, lines)
@@ -297,7 +305,7 @@ def rename_user(line_no: int, new_label: str) -> bool:
     old_safe = safe_label(parts[1]) if len(parts) > 1 else ""
     if os.path.isdir(SUB_DIR):
         for f in os.listdir(SUB_DIR):
-            if f.startswith(old_safe + "_") and (f.endswith(".txt") or f.endswith(".html")):
+            if is_sub_file_for(f, old_safe):
                 os.remove(os.path.join(SUB_DIR, f))
     new_label = safe_label(new_label.replace("|", ""))
     if not new_label:
@@ -402,3 +410,10 @@ def get_sub_url(label: str, token: str) -> str | None:
     if not domain:
         return None
     return f"https://{domain}/sub/{sub_filename(label, token)}"
+
+
+def get_sub_yaml_url(label: str, token: str) -> str | None:
+    domain = config.vwn_conf_get("DOMAIN")
+    if not domain:
+        return None
+    return f"https://{domain}/sub/{safe_label(label)}_{token}.yaml"

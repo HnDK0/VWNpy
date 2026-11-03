@@ -92,10 +92,11 @@ def _sub_info() -> str:
         return _fail("NO SUB DIR")
     txts = sorted(f for f in os.listdir(sub_dir) if f.endswith(".txt"))
     htmls = [f for f in os.listdir(sub_dir) if f.endswith(".html")]
-    if not txts:
+    yamls = [f for f in os.listdir(sub_dir) if f.endswith(".yaml")]
+    if not txts and not yamls:
         return _fail("NO SUB FILES")
     domain = config.vwn_conf_get("DOMAIN") or "?"
-    lines = [f"  TXT: {len(txts)}, HTML: {len(htmls)}"]
+    lines = [f"  TXT: {len(txts)}, HTML: {len(htmls)}, YAML: {len(yamls)}"]
     for t in txts[:5]:
         lines.append(f"    https://{domain}/sub/{t}")
     if len(txts) > 5:

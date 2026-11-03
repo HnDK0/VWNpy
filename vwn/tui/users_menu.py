@@ -102,9 +102,11 @@ def manage_users() -> None:
             sub_url = usr.get_sub_url(u["label"], u["token"]) or f"https://{dom}/sub/{usr.sub_filename(u['label'], u['token'])}"
             safe = usr.safe_label(u["label"])
             html_url = f"https://{dom}/sub/{safe}_{u['token']}.html"
+            yaml_url = usr.get_sub_yaml_url(u["label"], u["token"]) or f"https://{dom}/sub/{safe}_{u['token']}.yaml"
             console.print(f"\n  {usr.get_cached_flag()} [bold]{u['label']}[/]")
             console.print(f"  UUID: {u['uuid']}")
             console.print(f"  Sub URL: [bright_green]{sub_url}[/]")
+            console.print(f"  Mihomo:  [bright_green]{yaml_url}[/]")
             console.print(f"  HTML:    [bright_green]{html_url}[/]")
             r = shell.run(["qrencode", "-t", "ANSIUTF8"], input=sub_url,
                           capture=True, check=False)

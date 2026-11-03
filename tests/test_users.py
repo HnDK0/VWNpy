@@ -39,6 +39,19 @@ def test_sub_filename():
     assert users.sub_filename("", "t") == "_t.txt"
 
 
+@pytest.mark.parametrize("fname,expected", [
+    ("user1_ABC123.txt", True),
+    ("user1_ABC123.html", True),
+    ("user1_ABC123.yaml", True),
+    ("user1_ABC123.json", False),
+    ("user1_2_ABC123.txt", False),   # чужой label с тем же префиксом
+    ("user10_ABC123.txt", False),    # не начинается с "user1_"
+    ("user1_.txt", False),           # пустой токен
+])
+def test_is_sub_file_for(fname, expected):
+    assert users.is_sub_file_for(fname, "user1") is expected
+
+
 def test_generate_token_length():
     assert len(users.generate_token()) == 32
     assert len(users.generate_token(16)) == 16
@@ -443,7 +456,7 @@ def test_remove_user_cleans_sub_files(conf, tmp_path):
     u = users.add_user("delete_me")
     os.makedirs(str(tmp_path / "sub"), exist_ok=True)
     safe = users.safe_label("delete_me")
-    for suffix in ["_xxx.txt", "_yyy.html"]:
+    for suffix in ["_xxx.txt", "_yyy.html", "_zzz.yaml"]:
         open(str(tmp_path / "sub" / (safe + suffix)), "w").close()
     users.remove_user(2)
     remaining = os.listdir(str(tmp_path / "sub"))
@@ -486,7 +499,7 @@ def test_rename_user_cleans_old_sub_files(conf, tmp_path, monkeypatch):
     subdir = str(tmp_path / "sub")
     monkeypatch.setattr(users, "SUB_DIR", subdir)
     os.makedirs(subdir, exist_ok=True)
-    for suffix in ["_t.txt", "_t.html"]:
+    for suffix in ["_t.txt", "_t.html", "_t.yaml"]:
         open(str(tmp_path / "sub" / ("aaa" + suffix)), "w").close()
     users.rename_user(2, "bbb")
     remaining = os.listdir(subdir)
@@ -564,6 +577,21 @@ def test_get_sub_url_no_domain(tmp_path, monkeypatch):
 def test_get_sub_url_special_label(conf, tmp_path):
     url = users.get_sub_url("Hello World", "tok")
     assert url == "https://vpn.example.com/sub/HelloWorld_tok.txt"
+
+
+def test_get_sub_yaml_url(conf, tmp_path):
+    url = users.get_sub_yaml_url("user1", "TOKEN1")
+    assert url == "https://vpn.example.com/sub/user1_TOKEN1.yaml"
+
+
+def test_get_sub_yaml_url_no_domain(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
+    assert users.get_sub_yaml_url("user1", "TOKEN1") is None
+
+
+def test_get_sub_yaml_url_special_label(conf, tmp_path):
+    url = users.get_sub_yaml_url("Hello World", "tok")
+    assert url == "https://vpn.example.com/sub/HelloWorld_tok.yaml"
 
 
 # ── apply_users_to_configs ────────────────────────────────

@@ -175,6 +175,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="qr-wrap" id="sub-qr"><div class="qr-inner" id="sub-qrc"></div></div>
 </div>
 
+<!-- ══ MIHOMO YAML URL ══ -->
+<div class="sub-hero">
+  <div class="sub-lbl">Mihomo (YAML)</div>
+  <div class="sub-url-box" onclick="cp('sub-yaml-url',null)">
+    <span class="sub-url-text" id="sub-yaml-url">{{SUB_YAML_URL}}</span>
+  </div>
+  <div class="sub-row">
+    <button class="btn-primary" onclick="cp('sub-yaml-url',this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Копировать
+    </button>
+    <button class="btn-secondary" onclick="tqr('sub-yaml-qr','sub-yaml-url','sub-yaml-qrc')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+      QR Code
+    </button>
+  </div>
+  <div class="qr-wrap" id="sub-yaml-qr"><div class="qr-inner" id="sub-yaml-qrc"></div></div>
+</div>
+
 <!-- ══ TABS ══ -->
 <div class="tabs">
   <button class="tab active" onclick="switchTab('configs',this)">VLESS Конфиги</button>

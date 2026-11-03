@@ -209,7 +209,7 @@ def run_install(argv: "list | None" = None) -> None:
     if not user_list:
         users.add_user("default")
 
-    shell.run_task("Генерация подписок (sub_map + .txt + .html)",
+    shell.run_task("Генерация подписок (sub_map + .txt + .html + .yaml)",
                    sub.rebuild_all_sub_files)
 
     shell.run_task("Проверка и перезагрузка nginx", shell.nginx_reload)
