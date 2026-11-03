@@ -219,6 +219,7 @@ def test_reality_xhttp_url_never_auto(given, expected):
     u = sub.generate_reality_url("u", "1.2.3.4", 443, "sid", "microsoft.com", "pbk", "n",
                                  mode="xhttp", xhttp_path="/r", xhttp_extra=given)
     assert f"mode={expected}" in u and "mode=auto" not in u
+    assert "alpn=h2" in u
 
 
 def test_generate_mihomo_yaml_grpc():
@@ -267,6 +268,7 @@ def test_mihomo_reality_xhttp_mode_never_auto(given, expected):
     )
     y = sub.generate_mihomo_yaml(proxies)
     assert f"mode: {expected}" in y and "mode: auto" not in y
+    assert proxies[0]["alpn"] == ["h2"]
 
 
 def test_generate_mihomo_yaml_empty():

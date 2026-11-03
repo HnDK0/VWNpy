@@ -289,7 +289,7 @@ def read_reality_info(path: str | None = None) -> dict | None:
         "mode": mode,
     }
     if mode == "xhttp":
-        info["xhttp_path"] = config.vwn_conf_get("REALITY_XHTTP_PATH") or "/r"
+        info["xhttp_path"] = config.vwn_conf_get("REALITY_XHTTP_PATH") or ""
         info["xhttp_mode"] = config.vwn_conf_get("REALITY_XHTTP_MODE") or "auto"
     return info
 
@@ -337,7 +337,9 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
     ib = cfg["inbounds"][0]
     ss = ib.setdefault("streamSettings", {})
     if mode == "xhttp":
-        p = xhttp_path or config.vwn_conf_get("REALITY_XHTTP_PATH") or "/r"
+        p = xhttp_path or config.vwn_conf_get("REALITY_XHTTP_PATH")
+        if not p or p == "/r":
+            p = system.generate_random_path()
         xm = xhttp_mode or config.vwn_conf_get("REALITY_XHTTP_MODE") or "auto"
         ss["network"] = "xhttp"
         ss["xhttpSettings"] = _xhttp_server_settings(p)

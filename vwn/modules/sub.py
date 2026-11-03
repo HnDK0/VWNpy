@@ -43,7 +43,7 @@ def generate_reality_url(
     if mode == "xhttp":
         path = xhttp_path or "/r"
         rmode = _reality_xhttp_mode(xhttp_extra)
-        extra = f"&path={_urlencode(path)}&mode={rmode}&host={dest_host}"
+        extra = f"&alpn=h2&path={_urlencode(path)}&mode={rmode}&host={dest_host}"
         return f"{base}&type=xhttp{extra}#{_urlencode(name)}"
     return f"{base}&type=tcp&flow=xtls-rprx-vision#{_urlencode(name)}"
 
@@ -206,6 +206,7 @@ def build_mihomo_proxies(
                     "support-x25519mlkem768": True,
                 },
                 "network": "xhttp",
+                "alpn": ["h2"],
                 "xhttp-opts": {
                     "path": xhttp_path_reality or "/r",
                     "mode": _reality_xhttp_mode(xhttp_extra_mode),

@@ -254,6 +254,21 @@ def test_xhttp_server_mode_always_auto(m):
     assert c["inbounds"][0]["streamSettings"]["xhttpSettings"]["mode"] == "auto"
 
 
+def test_reality_xhttp_path_never_legacy_r(paths, monkeypatch):
+    """Reality-XHTTP не остаётся на легаси-пути /r; повторный вызов стабилен."""
+    xray.provision_configs("vpn.example.com", "https://www.openstreetmap.org/",
+                           "microsoft.com:443", private_key="PRIV")
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    config.vwn_conf_set("REALITY_XHTTP_PATH", "/r")          # легаси-значение
+    xray.set_reality_mode("xhttp", restart=False)
+    p = config.vwn_conf_get("REALITY_XHTTP_PATH")
+    assert p and p != "/r" and p.startswith("/v2/api/")
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    assert rc["inbounds"][0]["streamSettings"]["xhttpSettings"]["path"] == p
+    xray.set_reality_mode("xhttp", restart=False)            # уже случайный — не меняем
+    assert config.vwn_conf_get("REALITY_XHTTP_PATH") == p
+
+
 def test_dns_has_system_resolver_last(monkeypatch):
     monkeypatch.setattr(config, "vwn_conf_get", lambda k: None)
     assert xray._dns()["servers"][-1] == "localhost"
