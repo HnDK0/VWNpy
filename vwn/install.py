@@ -29,6 +29,7 @@ class InstallOptions:
     bbr: bool = False
     fail2ban: bool = False
     no_warp: bool = False
+    no_vless_enc: bool = False
     jail: bool = False
     ipv6: bool = False
     cpu_guard: bool = False
@@ -50,6 +51,7 @@ _BOOL_FLAGS = {
     "--bbr": "bbr", "--fail2ban": "fail2ban", "--no-warp": "no_warp",
     "--jail": "jail", "--ipv6": "ipv6", "--cpu-guard": "cpu_guard",
     "--psiphon": "psiphon", "--psiphon-warp": "psiphon_warp",
+    "--no-vless-enc": "no_vless_enc",
 }
 
 
@@ -190,6 +192,8 @@ def run_install(argv: "list | None" = None) -> None:
         lambda: xray.provision_configs(
             opts.domain, opts.stub,
             reality_port=opts.reality_port,
+            vless_encryption=not opts.no_vless_enc,
+            reality_mode="xhttp",
         ),
     )
 
@@ -214,7 +218,7 @@ def run_install(argv: "list | None" = None) -> None:
 
     shell.run_task("Проверка и перезагрузка nginx", shell.nginx_reload)
 
-    for svc in ("xray-reality", "xray-grpc", "xray-xhttp", "nginx"):
+    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
         shell.run_task(f"Включение и старт {svc}",
                        lambda s=svc: _enable_start(s))
 

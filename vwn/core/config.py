@@ -25,7 +25,12 @@ def connect_host_file_path() -> str:
 NGINX_LOOPBACK_PORT = 8443
 XRAY_GRPC_PORT = 50001
 XRAY_XHTTP_PORT = 50002
+XRAY_WS_PORT = 50003
 REALITY_PUBLIC_PORT = 443
+
+NGINX_SERVICE = "nginx"
+XRAY_CONFIG_FILES = ("xray-reality.json", "grpc.json", "xhttp.json", "ws.json")
+XRAY_SERVICES = ("xray-reality", "xray-grpc", "xray-xhttp", "xray-ws")
 
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _B64_PREFIX = "@b64:"

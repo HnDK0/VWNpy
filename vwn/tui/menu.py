@@ -25,7 +25,7 @@ def full_remove() -> None:
     if confirm != "yes":
         return
     remove_cert = input("  Оставить SSL сертификат? (Y/n): ").strip().lower() == "n"
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
+    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
         subprocess.run(["systemctl", "stop", svc])
         subprocess.run(["systemctl", "disable", svc])
     paths = ["/usr/local/etc/xray", "/etc/nginx/conf.d/xray.conf",
@@ -46,7 +46,7 @@ def _rebuild_configs() -> None:
         console.print(f"[red]{e}[/]")
         return
     run_cmd("systemctl daemon-reload")
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
+    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
         run_cmd(f"systemctl restart {svc}")
     console.print("[bright_green]Конфиги пересобраны из текущих параметров[/]")
 
@@ -375,7 +375,7 @@ def _dispatch(choice: int) -> bool:
     elif choice == 14:
         _rebuild_configs()
     elif choice == 15:
-        for svc in ["xray-reality", "xray-grpc", "xray-xhttp", "nginx"]:
+        for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
             run_cmd(f"systemctl restart {svc}")
         wait_key()
     elif choice == 16:

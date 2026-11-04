@@ -206,7 +206,7 @@ def remove_domain_flow(tag: str) -> None:
 
 
 def restart_xray_services() -> None:
-    run_cmd("systemctl restart xray-reality xray-grpc xray-xhttp")
+    run_cmd("systemctl restart xray-reality xray-grpc xray-xhttp xray-ws")
 
 
 def edit_list_in_editor(file_path: str) -> bool:

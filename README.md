@@ -26,6 +26,7 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 | VLESS + Reality | 443 (публичный) | TCP (Vision) / XHTTP (self-steal, SNI=домен) | `xray-reality` |
 | VLESS + gRPC + TLS | 50001 (loopback) | gRPC (`gun` / `multi`, h2) | `xray-grpc` |
 | VLESS + XHTTP | 50002 (loopback) | XHTTP | `xray-xhttp` |
+| VLESS + WS + TLS | 50003 (loopback) | WebSocket | `xray-ws` |
 
 ```
 Порт 443
@@ -34,7 +35,8 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
        └─ остальное → nginx 127.0.0.1:8443 (настоящий сертификат домена)
             ├─ /sub/*            — подписки
             ├─ /<serviceName>/*  → xray-grpc :50001 (grpc_pass, h2c)
-            └─ /<xhttp-path>     → xray-xhttp :50002 (grpc_pass, h2c)
+            ├─ /<xhttp-path>     → xray-xhttp :50002 (grpc_pass, h2c)
+            └─ /<ws-path>        → xray-ws :50003 (WebSocket)
 ```
 
 ## Self-steal (Reality)
@@ -44,6 +46,20 @@ SNI Reality всегда равен домену сервера (`--domain`): з
 (`--reality-dest`) больше не используется; смена домена выполняется через
 `vwn` меню («Сменить домен») или `update_domain()` и требует перевыпущенного
 SSL-сертификата.
+
+## Прямой доступ и CDN
+
+По умолчанию без CDN публикуется только XHTTP (прямой) и Reality-XHTTP.
+WS и gRPC публикуются только при включённом CDN. CDN терминирует TLS и видит
+внешний VLESS-поток, поэтому для скрытия содержимого включайте VLESS
+Encryption (по умолчанию для новых установок). `support-x25519mlkem768` у
+Reality остаётся отдельным PQ key exchange.
+
+## VLESS Encryption
+
+Новые установки включают VLESS Encryption (`mlkem768x25519plus`) по умолчанию.
+Для существующих установок: `vwn vless-enc on` (клиенты должны поддерживать
+VLESS Encryption и переимпортировать подписку). Отключить: `vwn vless-enc off`.
 
 ## Переход с WebSocket на gRPC
 
@@ -83,6 +99,7 @@ SSL-сертификата.
 | `--psiphon-country` | Страна Psiphon (2 буквы: `DE`, `NL`, `US`) |
 | `--psiphon-warp` | Psiphon поверх WARP (несовместимо с `--no-warp`) |
 | `--no-warp` | Не устанавливать WARP |
+| `--no-vless-enc` | Отключить VLESS Encryption при установке |
 
 
 ### Безопасность

@@ -8,7 +8,7 @@ from vwn.core import config
 
 def _paths() -> list[str]:
     return [os.path.join(config.XRAY_DIR, p)
-            for p in ("grpc.json", "xhttp.json", "xray-reality.json")]
+            for p in config.XRAY_CONFIG_FILES]
 
 
 def add_outbound(tag: str, protocol: str, port: int) -> None:

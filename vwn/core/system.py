@@ -303,7 +303,7 @@ def install_xray() -> None:
     """
     _create_xray_user()
     # Остановить работающие экземпляры перед заменой бинаря (иначе ETXTBSY)
-    for _svc in ("xray-reality", "xray-grpc", "xray-xhttp"):
+    for _svc in config.XRAY_SERVICES:
         if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
             shell.run(["systemctl", "stop", _svc], check=False)
 
@@ -344,7 +344,7 @@ def install_xray() -> None:
     if not shutil.which("xray"):
         shell.die("xray не установился")
     # Перезапустить юниты, чтобы подхватить новый бинарь
-    for _svc in ("xray-reality", "xray-grpc", "xray-xhttp"):
+    for _svc in config.XRAY_SERVICES:
         if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):
             shell.run(["systemctl", "daemon-reload"], check=False)
             shell.run(["systemctl", "restart", _svc], check=False)
@@ -638,6 +638,52 @@ def find_free_port(start: int = 20000, end: int = 20999) -> int:
 def generate_random_path() -> str:
     """Случайный XHTTP путь: /v2/api/<32 hex>."""
     return "/v2/api/" + secrets.token_hex(16)
+
+
+_VLESS_ENC_RE = re.compile(
+    r"mlkem768x25519plus\.(?:native|xorpub|random)"
+    r"\.(?:0rtt|1rtt|\d+s)(?:\.[0-9]+-[0-9]+)*\.[A-Za-z0-9_-]{20,}"
+)
+
+
+def generate_vless_keypair() -> "tuple[str | None, str | None]":
+    """Сгенерировать VLESS Encryption (decryption, encryption) с ML-KEM-768.
+
+    Возвращает (None, None), если xray недоступен или команда не удалась.
+    """
+    if not os.path.isfile(config.XRAY_BIN):
+        return None, None
+    try:
+        res = shell.run([config.XRAY_BIN, "vlessenc"], capture=True, check=False)
+    except Exception:
+        return None, None
+    if getattr(res, "returncode", 1) != 0:
+        return None, None
+    out = getattr(res, "stdout", "") or ""
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", errors="replace")
+    sections = re.split(r"^Authentication:\s*", out, flags=re.M)
+    chosen: str | None = None
+    for sec in sections:
+        if "ML-KEM-768" in sec:
+            chosen = sec
+            break
+    if chosen is None:
+        for sec in sections:
+            if "X25519" in sec:
+                chosen = sec
+                break
+    if chosen is None:
+        chosen = out
+    dec_m = re.search(r'"decryption":\s*"([^"]+)"', chosen)
+    enc_m = re.search(r'"encryption":\s*"([^"]+)"', chosen)
+    if not (dec_m and enc_m):
+        return None, None
+    decryption = dec_m.group(1)
+    encryption = enc_m.group(1)
+    if not (_VLESS_ENC_RE.search(decryption) and _VLESS_ENC_RE.search(encryption)):
+        return None, None
+    return decryption, encryption
 
 
 def generate_grpc_service() -> str:

@@ -71,7 +71,7 @@ def manage_reality() -> None:
                 console.print("[bright_green]→ TCP (xtls-rprx-vision)[/]")
             elif mode == "XHTTP":
                 xm = ask_list("XHTTP mode", ["auto", "stream-one", "stream-up",
-                                             "packet-one", "packet-up", "none"])
+                                             "packet-up", "none"])
                 set_reality_mode("xhttp", xhttp_mode=xm)
                 from vwn.modules.sub import rebuild_all_sub_files
                 rebuild_all_sub_files()
@@ -181,7 +181,7 @@ def manage_grpc_xhttp() -> None:
                 run_task("Смена XHTTP path", lambda: update_xhttp_path(p))
         elif val == "6":
             mode = ask_list("XHTTP mode", ["auto", "stream-one", "stream-up",
-                                           "packet-one", "packet-up", "none"])
+                                           "packet-up", "none"])
             run_task("Смена XHTTP mode", lambda: set_xhttp_mode(mode))
         elif val == "7":
             cur = info["domain"]

@@ -80,6 +80,7 @@ def _config_summary() -> str:
         ("Domain", config.vwn_conf_get("DOMAIN") or "-"),
         ("Reality SNI (домен)", config.vwn_conf_get("REALITY_DEST") or "-"),
         ("Reality port", config.vwn_conf_get("REALITY_PORT") or "443"),
+        ("VLESS Encryption", config.vwn_conf_get("VLESS_ENCRYPTION") or "none"),
         ("Users", users_info),
         ("Server IP", config.vwn_conf_get("SERVER_IP") or "-"),
     ]
@@ -166,7 +167,8 @@ def _diag_xray_test() -> None:
     console.print("--- Xray Config Tests ---")
     for label, path in [("Reality", os.path.join(config.XRAY_DIR, "xray-reality.json")),
                          ("gRPC", os.path.join(config.XRAY_DIR, "grpc.json")),
-                         ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json"))]:
+                         ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json")),
+                         ("WS", os.path.join(config.XRAY_DIR, "ws.json"))]:
         if not os.path.isfile(path):
             console.print(f"  {label:7}: {_skip('no config')}")
             continue
@@ -206,15 +208,18 @@ def _diag_transports() -> None:
                       check=False, capture=True, timeout=12)
         return (r.stdout or "").strip()
 
+    ve = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
+    if ve and ve != "none":
+        console.print("  gRPC (nginx→xray): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
+        console.print("  XHTTP (grpc_pass): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
+        return
     if not svc:
         console.print(f"  gRPC (nginx→xray): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
     else:
-        # gRPC-запрос на /<service>/Tun: 200 = nginx дошёл до xray-grpc
         c = _code(["--http2", "-X", "POST", "-H", "content-type: application/grpc",
                    "--data-binary", "", f"https://{domain}:{port}/{svc}/Tun"])
         console.print(f"  gRPC (nginx→xray): "
                       + (_ok(c) if c == "200" else _fail(c or "нет ответа", "ожидается 200")))
-        # без application/grpc путь обязан отдавать 404 (маскировка от сканеров)
         c = _code(["--http2", f"https://{domain}:{port}/{svc}/Tun"])
         console.print(f"  gRPC (проба 404):  "
                       + (_ok(c) if c == "404" else _fail(c or "нет ответа", "ожидается 404")))
@@ -246,6 +251,7 @@ def run_full_diag() -> None:
     for label, svc in [("xray-reality", "xray-reality.service"),
                         ("xray-grpc", "xray-grpc.service"),
                         ("xray-xhttp", "xray-xhttp.service"),
+                        ("xray-ws", "xray-ws.service"),
                         ("nginx", "nginx.service"),
                         ("warp-svc", "warp-svc.service"),
                         ("fail2ban", "fail2ban.service")]:

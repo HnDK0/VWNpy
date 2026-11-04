@@ -79,7 +79,9 @@ def test_xhttp_config_shape():
     # режим клиента задаётся в ссылке; версионно-зависимые поля не пишем
     assert xs["mode"] == "auto"
     assert xs["path"] == "/v2/api/xyz"
-    assert "xmux" not in xs
+    assert "xmux" not in xs.get("extra", {})
+    assert xs["extra"]["xPaddingBytes"] == "100-1000"
+    assert set(xs) == {"path", "mode", "extra"}
     assert "scMaxConcurrentPosts" not in xs and "scMaxEachPostBytes" not in xs
 
 
@@ -100,7 +102,7 @@ def test_provision_writes_valid_configs(paths):
     svc = gc["inbounds"][0]["streamSettings"]["grpcSettings"]["serviceName"]
     assert svc == params["grpc_service"] == config.vwn_conf_get("GRPC_SERVICE")
     assert svc.startswith("svc") and "/" not in svc
-    assert config.vwn_conf_get("WS_PATH") is None
+    assert config.vwn_conf_get("WS_PATH") is not None
 
     xc = json.loads((paths / "xray" / "xhttp.json").read_text(encoding="utf-8"))
     assert xc["inbounds"][0]["port"] == 50002
@@ -116,7 +118,7 @@ def test_provision_writes_valid_configs(paths):
     assert "grpc_read_timeout 1w" in ng and "client_body_timeout 1w" in ng
     assert "grpc_socket_keepalive on" not in ng    # строка удалена из шаблона
     assert "proxy_pass http://127.0.0.1:50001" not in ng
-    assert "Upgrade" not in ng and "connection_upgrade" not in ng
+    assert "Upgrade" in ng and "connection_upgrade" in ng
     # X-Forwarded-For в gRPC-location даёт warning в Xray на каждое соединение
     grpc_loc = ng[ng.index(f"location ^~ /{svc} {{"):]
     grpc_loc = grpc_loc[:grpc_loc.index("\n    }")]
@@ -356,7 +358,7 @@ def test_read_grpc_xhttp_info(paths, monkeypatch):
     assert info["grpc_active"] is True
     assert info["grpc_service"] == params["grpc_service"]
     assert info["grpc_port"] == 50001 and info["grpc_mode"] == "gun"
-    assert "ws_path" not in info
+    assert "ws_path" in info
 
 
 # ── Миграция WebSocket → gRPC ───────────────────────────────────────

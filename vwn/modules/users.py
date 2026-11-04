@@ -387,6 +387,12 @@ def apply_users_to_configs() -> None:
         xh_cfg["inbounds"][0]["settings"]["clients"] = clients_x
         _write_json(xh_path, xh_cfg)
 
+    ws_path = os.path.join(config.XRAY_DIR, "ws.json")
+    ws_cfg = _read_json(ws_path)
+    if ws_cfg:
+        ws_cfg["inbounds"][0]["settings"]["clients"] = clients_x
+        _write_json(ws_path, ws_cfg)
+
     reality_path = os.path.join(config.XRAY_DIR, "xray-reality.json")
     r_cfg = _read_json(reality_path)
     if r_cfg:
@@ -394,7 +400,7 @@ def apply_users_to_configs() -> None:
         _write_json(reality_path, r_cfg)
 
     shell.run(["systemctl", "daemon-reload"], check=False)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         shell.run(["systemctl", "restart", svc], check=False)
 
 

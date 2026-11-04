@@ -1,7 +1,7 @@
 """Shared domain list helpers for tunnel Split-routing."""
 import json
 import os
-from vwn.core import shell
+from vwn.core import config, shell
 from vwn.core.validate import validate_domain
 
 from vwn.modules._outbound import _paths
@@ -107,5 +107,5 @@ def _apply(tag: str, routing_tag: str | None = None) -> None:
                     r.pop("port", None)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         shell.run(["systemctl", "restart", svc], timeout=30, check=False)

@@ -7,7 +7,7 @@ from vwn.tui.helpers import ask_port, parse_ssh_port, run_task, show_ufw_status,
 def _dns_menu() -> None:
     """Подменю выбора DNS-провайдера."""
     from vwn.core.system import dns_status, dns_set, _DNS_PRESETS, setup_system_dns
-    from vwn.core import shell
+    from vwn.core import config, shell
     from vwn.core.color import console
 
     def _apply() -> None:
@@ -16,7 +16,7 @@ def _dns_menu() -> None:
         # сбросить кэш резолвера (systemd-resolved)
         shell.run(["resolvectl", "flush-caches"], check=False)
         shell.run(["systemd-resolve", "--flush-caches"], check=False)
-        shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"], check=False)
+        shell.run(["systemctl", "restart"] + list(config.XRAY_SERVICES), check=False)
 
     while True:
         st = dns_status()

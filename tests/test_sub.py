@@ -152,8 +152,7 @@ def test_build_user_sub_file(conf, tmp_path, monkeypatch):
     assert txt_path.exists()
     b64 = txt_path.read_text()
     decoded = base64.b64decode(b64).decode()
-    # gRPC/XHTTP через Reality fallback → порт 443
-    assert "vpn.example.com:443" in decoded
+    # прямой XHTTP/Reality → серверный IP
     assert "1.2.3.4:443" in decoded
     # .html created
     found_html = list(tmp_path.glob("user1*.html"))
@@ -185,6 +184,7 @@ def test_grpc_url_encodes_service_name():
     assert "path=a.b-c_d" in u
 
 def test_user_sub_contains_grpc_not_ws(conf, tmp_path):
+    (tmp_path / "connect_host").write_text("cdn.example.com", encoding="utf-8")
     sub.build_user_sub_file("550e8400-e29b-41d4-a716-446655440000", "user1", "TOKEN1",
                             "vpn.example.com", "1.2.3.4", output_dir=str(tmp_path))
     decoded = base64.b64decode((tmp_path / "user1_TOKEN1.txt").read_text()).decode()
@@ -199,6 +199,7 @@ def test_user_sub_contains_grpc_not_ws(conf, tmp_path):
 
 
 def test_user_sub_grpc_mode_and_disabled(conf, tmp_path):
+    (tmp_path / "connect_host").write_text("cdn.example.com", encoding="utf-8")
     config.vwn_conf_set("GRPC_MODE", "multi")
     sub.build_user_sub_file("u", "user1", "T", "vpn.example.com", "1.2.3.4",
                             output_dir=str(tmp_path))
@@ -217,7 +218,7 @@ def test_user_sub_grpc_mode_and_disabled(conf, tmp_path):
 ])
 def test_reality_xhttp_url_never_auto(given, expected):
     u = sub.generate_reality_url("u", "1.2.3.4", 443, "sid", "microsoft.com", "pbk", "n",
-                                 mode="xhttp", xhttp_path="/r", xhttp_extra=given)
+                                 mode="xhttp", xhttp_path="/r", xhttp_mode=given)
     assert f"mode={expected}" in u and "mode=auto" not in u
     assert "alpn=h2" in u
 

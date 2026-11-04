@@ -24,7 +24,7 @@ def dashboard() -> None:
 
     svcs = [service_status(s) for s in
             ("xray-reality.service", "xray-grpc.service",
-             "xray-xhttp.service", "nginx.service")]
+             "xray-xhttp.service", "xray-ws.service", "nginx.service")]
     lines.append(f"[bold]Протоколы:[/]    {'  '.join(svcs)}")
 
     cdn = _cdn_status()

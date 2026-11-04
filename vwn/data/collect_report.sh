@@ -13,6 +13,7 @@ XRAY_BIN="${VWN_XRAY_BIN:-/usr/local/bin/xray}"
 LB_PORT="${VWN_LB_PORT:-8443}"
 GRPC_PORT="${VWN_GRPC_PORT:-50001}"
 XH_PORT="${VWN_XH_PORT:-50002}"
+WS_PORT="${VWN_WS_PORT:-50003}"
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "нужен python3" >&2
@@ -29,7 +30,8 @@ import hashlib, json, re, sys
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 IPV4 = re.compile(r"\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}\b")
 KEEP_IP = ("127.", "0.0.0.0", "1.1.1.1", "9.9.9.9", "8.8.8.8", "1.0.0.1")
-SECRET_KEYS = {"id", "privateKey", "publicKey", "password", "shortIds", "email", "pbk", "sid"}
+SECRET_KEYS = {"id", "privateKey", "publicKey", "password", "shortIds", "email", "pbk", "sid",
+               "decryption", "encryption"}
 
 
 def tag(p):
@@ -99,7 +101,8 @@ elif cmd == "json":
 elif cmd == "nginx":
     xd = sys.argv[3]
     paths = {inbound_path(xd + "/grpc.json", "grpcSettings", "serviceName"),
-             inbound_path(xd + "/xhttp.json", "xhttpSettings")} - {""}
+              inbound_path(xd + "/xhttp.json", "xhttpSettings"),
+              inbound_path(xd + "/ws.json", "wsSettings")} - {""}
     txt = open(sys.argv[2], encoding="utf-8", errors="replace").read()
     for p in sorted(paths, key=len, reverse=True):
         txt = txt.replace(p, tag(p))
@@ -150,6 +153,8 @@ code() {
 DOMAIN="$(H get "$XD/vwn.conf" DOMAIN)"
 GRPC_SVC="$(H grpcsvc "$XD")"
 XH_PATH="$(H xhpath "$XD")"
+WS_PATH="$(H inbound_path "$XD/ws.json" wsSettings 2>/dev/null || true)"
+VE="$(H get "$XD/vwn.conf" VLESS_ENCRYPTION)"
 GRPC_NGX="$(H inconf "${GRPC_SVC:+/$GRPC_SVC}" "$NGX_CONF")"
 XH_NGX="$(H inconf "$XH_PATH" "$NGX_CONF")"
 
@@ -185,7 +190,7 @@ run "nginx модули" sh -c 'nginx -V 2>&1 | tr " " "\n" | grep -E "with-http
 run "nginx -t" sh -c 'nginx -t 2>&1'
 
 sec "Сервисы"
-for s in xray-reality xray-grpc xray-xhttp nginx; do
+for s in xray-reality xray-grpc xray-xhttp xray-ws nginx; do
     run "$s" sh -c "echo \"active=\$(systemctl is-active $s 2>&1) enabled=\$(systemctl is-enabled $s 2>&1)\"; systemctl show $s -p NRestarts -p Result -p ExecMainStatus 2>&1 | tr '\n' ' '; echo"
 done
 run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \$4, \$6}"'
@@ -193,7 +198,7 @@ run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \
 sec "Конфиг (маскированный)"
 printf '\n--- vwn.conf ---\n'
 H conf "$XD/vwn.conf"
-for f in xray-reality.json grpc.json xhttp.json; do
+for f in xray-reality.json grpc.json xhttp.json ws.json; do
     printf '\n--- %s ---\n' "$f"
     H json "$XD/$f"
 done
@@ -261,7 +266,7 @@ run "ufw" sh -c 'ufw status verbose 2>&1 | head -30'
 run "iptables (INPUT/OUTPUT)" sh -c 'iptables -S 2>&1 | grep -E "^-P|DROP|REJECT" | head -20'
 
 sec "Логи (последние строки)"
-run "journal: xray-grpc/xhttp/reality (warning+, 24ч)" sh -c 'journalctl -u xray-grpc -u xray-xhttp -u xray-reality --since "24 hours ago" -p warning --no-pager -o short -n 40 2>&1 | cut -c1-220'
+run "journal: xray-grpc/xhttp/reality/ws (warning+, 24ч)" sh -c 'journalctl -u xray-grpc -u xray-xhttp -u xray-reality -u xray-ws --since "24 hours ago" -p warning --no-pager -o short -n 40 2>&1 | cut -c1-220'
 run "journal: nginx (24ч)" sh -c 'journalctl -u nginx --since "24 hours ago" --no-pager -o short -n 20 2>&1 | cut -c1-220'
 run "/var/log/xray/error.log" sh -c 'tail -n 25 /var/log/xray/error.log 2>&1 | cut -c1-260'
 run "/var/log/xray/reality-error.log" sh -c 'tail -n 15 /var/log/xray/reality-error.log 2>&1 | cut -c1-260'
@@ -275,13 +280,15 @@ fi
 [ "$GRPC_NGX" = "no" ] && echo "! serviceName gRPC из xray не найден среди location nginx → 404. Лечится: vwn rebuild"
 [ "$XH_NGX" = "no" ] && echo "! Путь XHTTP в xray не найден среди location nginx → 404. Лечится: vwn rebuild"
 grep -q 'grpc_pass' "$NGX_CONF" 2>/dev/null || echo "! В nginx нет grpc_pass (нужен и для gRPC, и для XHTTP: proxy_pass их ломает)"
-[ -f "$XD/config.json" ] || [ -f /etc/systemd/system/xray-ws.service ] && echo "! Остались следы WebSocket (config.json / xray-ws.service) → выполните vwn rebuild (переход на gRPC)"
+if [ -f "$XD/config.json" ]; then echo "! Остались следы WebSocket (config.json) → выполните vwn rebuild (переход на gRPC)"; fi
 grep -q '"mode": "stream-one"\|"mode": "stream-up"\|"mode": "packet-up"' "$XD/xhttp.json" 2>/dev/null && echo "! Серверный XHTTP закреплён на одном режиме — должен быть auto"
 if ! ss -ltn 2>/dev/null | grep -q ":$GRPC_PORT "; then echo "! Порт xray-grpc $GRPC_PORT никто не слушает (сервис упал?)"; fi
 if ! ss -ltn 2>/dev/null | grep -q ":$LB_PORT "; then echo "! Порт nginx loopback $LB_PORT никто не слушает"; fi
 g1="${G1%% *}"; g2="${G2%% *}"; g3="${G3%% *}"; g4="${G4%% *}"
 if [ -n "$g1" ]; then
-    if [ "$g1" != "200" ]; then
+    if [ -n "$VE" ] && [ "$VE" != "none" ]; then
+        echo "gRPC: VLESS Encryption включён — probe без handshake невозможен (ожидаемо)"
+    elif [ "$g1" != "200" ]; then
         echo "! gRPC: xray-grpc отвечает $g1 (не 200) → проблема в самом Xray (сервис/конфиг/serviceName), смотрите журнал xray-grpc"
     elif [ "$g2" != "200" ]; then
         echo "! gRPC: xray-grpc в порядке, но через nginx $g2 → проблема в nginx (location/grpc_pass/сертификат/http2), смотрите nginx error.log"
@@ -293,7 +300,7 @@ if [ -n "$g1" ]; then
         echo "gRPC: цепочка на сервере исправна (200 на всех уровнях) → причина снаружи: клиент (alpn=h2/sni/serviceName/mode), CDN (нужен gRPC в Cloudflare) или провайдер"
     fi
 fi
-case "${X2%% *}" in 502|503|504|000) echo "! XHTTP: через nginx ${X2%% *} → nginx не достучался до xray-xhttp (порт/сервис) или нет grpc_pass";; esac
+if [ -n "$VE" ] && [ "$VE" != "none" ]; then echo "XHTTP: VLESS Encryption включён — probe без handshake невозможен (ожидаемо)"; else case "${X2%% *}" in 502|503|504|000) echo "! XHTTP: через nginx ${X2%% *} → nginx не достучался до xray-xhttp (порт/сервис) или нет grpc_pass";; esac; fi
 echo "(если строк с '!' нет — проблема не в конфигурации; смотрите блоки проверок и логи выше)"
 } > "$OUT" 2>&1
 

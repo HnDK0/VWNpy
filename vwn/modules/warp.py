@@ -63,11 +63,10 @@ def _is_warp_routing(rule: dict) -> bool:
 
 def _xray_config_paths() -> list[str]:
     paths = []
-    for p in (os.path.join(config.XRAY_DIR, "grpc.json"),
-              os.path.join(config.XRAY_DIR, "xhttp.json"),
-              os.path.join(config.XRAY_DIR, "xray-reality.json")):
-        if os.path.exists(p):
-            paths.append(p)
+    for p in config.XRAY_CONFIG_FILES:
+        fp = os.path.join(config.XRAY_DIR, p)
+        if os.path.exists(fp):
+            paths.append(fp)
     return paths
 
 
@@ -277,7 +276,7 @@ def install_native() -> None:
     _apply_native_outbound(keys["WARP_PRIVATE_KEY"], keys["WARP_IPV4"], endpoint)
     config.vwn_conf_set("WARP_METHOD", "native")
     config.vwn_conf_set("WARP_ENDPOINT", endpoint)
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print("  WARP (native) installed")
 
@@ -613,7 +612,7 @@ def install_amnezia() -> None:
     _apply_amnezia_outbound()
     config.vwn_conf_set("WARP_METHOD", "amnezia")
     config.vwn_conf_set("WARP_ENDPOINT", endpoint)
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print("  WARP (AmneziaWG) installed")
 
@@ -713,7 +712,7 @@ def install_warp_svc() -> None:
     print("  Applying Xray outbound...")
     _apply_warp_svc_outbound()
     config.vwn_conf_set("WARP_METHOD", "warp-svc")
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print("  WARP (warp-svc) installed")
 
@@ -756,7 +755,7 @@ def remove() -> None:
     config.vwn_conf_del("WARP_METHOD")
     config.vwn_conf_del("WARP_ENDPOINT")
     config.vwn_conf_del("WARP_TUNNEL_MODE")
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print("  WARP removed")
 
@@ -780,7 +779,7 @@ def stop() -> None:
         shell.run(["warp-cli", "disconnect"], check=False)
     _remove_outbound(method)
     # ponytail: WARP_TUNNEL_MODE НЕ удаляем — start() восстановит routing
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print(f"  WARP ({method}) остановлен — ключи и конфиг сохранены")
 
@@ -814,7 +813,7 @@ def start() -> None:
     mode = config.vwn_conf_get("WARP_TUNNEL_MODE") or ""
     if mode and _check_tunnel_alive(method):
         _add_routing_rule_if_missing(tag, mode)
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)
     print(f"  WARP ({method}) запущен")
 
@@ -964,5 +963,5 @@ def upgrade() -> None:
         shell.run(["apt-get", "install", "-y", "--only-upgrade",
                    "cloudflare-warp"], timeout=120, check=False)
         shell.run(["systemctl", "restart", "warp-svc"], check=False)
-    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp"],
+    shell.run(["systemctl", "restart", "xray-reality", "xray-grpc", "xray-xhttp", "xray-ws"],
               check=False)

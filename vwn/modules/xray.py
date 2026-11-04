@@ -74,11 +74,28 @@ def _norm_path(path: str) -> str:
     return "/" + (path or "").strip("/")
 
 
+def all_config_paths() -> list[str]:
+    return [os.path.join(config.XRAY_DIR, p) for p in config.XRAY_CONFIG_FILES]
+
+
+def all_services() -> list[str]:
+    return list(config.XRAY_SERVICES)
+
+
+def generate_vless_keypair() -> "tuple[str | None, str | None]":
+    """Обёртка над system.generate_vless_keypair (для единообразия и тестов)."""
+    return system.generate_vless_keypair()
+
+
+_XHTTP_SERVER_EXTRA = {"xPaddingBytes": "100-1000"}
+
+
 def _xhttp_server_settings(path: str) -> dict:
     """Серверный XHTTP всегда mode=auto: принимает stream-one/stream-up/
     packet-up. Закреплённый режим режет клиентов (auto по TLS = stream-up).
-    Версионно-зависимые поля (scMax*) не пишем."""
-    return {"path": path, "mode": "auto"}
+    Версионно-зависимые поля (scMax*) не пишем. xmux/noGRPCHeader — только
+    клиентские поля и на сервере не применяются."""
+    return {"path": path, "mode": "auto", "extra": dict(_XHTTP_SERVER_EXTRA)}
 
 
 def _dns() -> dict:
@@ -165,9 +182,10 @@ def generate_reality_keypair() -> "tuple[str, str]":
 
 
 def reality_config(uuid: str, server_name: str,
-                   private_key: str, short_id: str,
-                   port: int = config.REALITY_PUBLIC_PORT,
-                   fallback_port: int = config.NGINX_LOOPBACK_PORT) -> dict:
+                    private_key: str, short_id: str,
+                    port: int = config.REALITY_PUBLIC_PORT,
+                    fallback_port: int = config.NGINX_LOOPBACK_PORT,
+                    decryption: str = "none") -> dict:
     """Reality на 443 публично (self-steal).
 
     server_name — собственный домен (DOMAIN): он же в сертификате nginx.
@@ -184,9 +202,9 @@ def reality_config(uuid: str, server_name: str,
             "settings": {
                 "clients": [{
                     "id": uuid, "flow": "xtls-rprx-vision", "email": "default",
-                    "minClientVer": "", "maxClientVer": "",
+                "minClientVer": "", "maxClientVer": "",
                 }],
-                "decryption": "none",
+                "decryption": decryption,
             },
             "streamSettings": {
                 "network": "tcp",
@@ -210,7 +228,8 @@ def reality_config(uuid: str, server_name: str,
     }
 
 
-def grpc_config(uuid: str, port: int, service_name: str) -> dict:
+def grpc_config(uuid: str, port: int, service_name: str,
+                decryption: str = "none") -> dict:
     """VLESS+gRPC за nginx: Xray слушает h2c на loopback, TLS терминирует nginx.
 
     serviceName — один сегмент пути без "/" (Xray трактует имя с ведущим "/"
@@ -225,7 +244,7 @@ def grpc_config(uuid: str, port: int, service_name: str) -> dict:
             "listen": "127.0.0.1",
             "port": port,
             "protocol": "vless",
-            "settings": {"clients": [{"id": uuid, "level": 0}], "decryption": "none"},
+            "settings": {"clients": [{"id": uuid, "level": 0}], "decryption": decryption},
             "streamSettings": {
                 "network": "grpc",
                 "security": "none",
@@ -242,7 +261,7 @@ def grpc_config(uuid: str, port: int, service_name: str) -> dict:
 
 
 def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
-                 mode: str = "auto") -> dict:
+                  mode: str = "auto", decryption: str = "none") -> dict:
     return {
         "log": _log("/var/log/xray/error.log"),
         "dns": _dns(),
@@ -250,7 +269,7 @@ def xhttp_config(uuid: str, port: int, xhttp_path: str, domain: str,
             "listen": "127.0.0.1",
             "port": port,
             "protocol": "vless",
-            "settings": {"clients": [{"id": uuid, "level": 0}], "decryption": "none"},
+            "settings": {"clients": [{"id": uuid, "level": 0}], "decryption": decryption},
             "streamSettings": {
                 "network": "xhttp",
                 "security": "none",
@@ -270,6 +289,10 @@ def _write_json(path: str, data: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def write_reality_config(path: str, *a, **kw) -> None:
@@ -282,6 +305,36 @@ def write_grpc_config(path: str, *a, **kw) -> None:
 
 def write_xhttp_config(path: str, *a, **kw) -> None:
     _write_json(path, xhttp_config(*a, **kw))
+
+
+def ws_config(uuid: str, port: int, ws_path: str,
+              decryption: str = "none") -> dict:
+    return {
+        "log": _log("/var/log/xray/error.log"),
+        "dns": _dns(),
+        "inbounds": [{
+            "listen": "127.0.0.1",
+            "port": port,
+            "protocol": "vless",
+            "settings": {"clients": [{"id": uuid, "level": 0}],
+                         "decryption": decryption},
+            "streamSettings": {
+                "network": "ws",
+                "security": "none",
+                "wsSettings": {"path": _norm_path(ws_path)},
+                "sockopt": _sockopt(public=False),
+            },
+            "sniffing": _SNIFFING,
+            "tag": "ws-inbound",
+        }],
+        "outbounds": _outbounds(),
+        "routing": _routing_base(),
+        "policy": _policy(),
+    }
+
+
+def write_ws_config(path: str, *a, **kw) -> None:
+    _write_json(path, ws_config(*a, **kw))
 
 
 # ── Reality management helpers ──────────────────────────────────────
@@ -401,12 +454,15 @@ LEGACY_WS_SERVICE = "xray-ws"
 
 
 def legacy_ws_present() -> bool:
-    """Установка ещё на WebSocket: есть WS_PATH, юнит xray-ws или старый config.json."""
+    """Установка ещё на WebSocket: старый config.json или unit без ws.json/WS_PATH."""
     return bool(
-        config.vwn_conf_get("WS_PATH")
-        or os.path.isfile(os.path.join(config.SYSTEMD_DIR, LEGACY_WS_SERVICE + ".service"))
-        or os.path.isfile(os.path.join(config.XRAY_DIR, "config.json"))
+        os.path.isfile(os.path.join(config.XRAY_DIR, "config.json"))
         or os.path.isfile(os.path.join(config.XRAY_DIR, "config.json.disabled"))
+        or (
+            os.path.isfile(os.path.join(config.SYSTEMD_DIR, LEGACY_WS_SERVICE + ".service"))
+            and not os.path.isfile(os.path.join(config.XRAY_DIR, "ws.json"))
+            and not config.vwn_conf_get("WS_PATH")
+        )
     )
 
 
@@ -435,7 +491,7 @@ def migrate_ws_to_grpc() -> bool:
         disabled.add("grpc")
         config.vwn_conf_set("DISABLED_PROTOCOLS", ",".join(sorted(disabled)))
 
-    for name in ("config.json", "config.json.disabled"):
+    for name in ("config.json", "config.json.disabled", "ws.json", "ws.json.disabled"):
         p = os.path.join(config.XRAY_DIR, name)
         if os.path.isfile(p):
             os.remove(p)
@@ -446,7 +502,7 @@ def migrate_ws_to_grpc() -> bool:
     shutil.rmtree(os.path.join(config.SYSTEMD_DIR, LEGACY_WS_SERVICE + ".service.d"),
                   ignore_errors=True)
 
-    write_xray_units()
+    write_xray_units(include_ws=False)
     shell.run(["systemctl", "daemon-reload"], check=False)
     if "grpc" not in disabled:
         shell.run(["systemctl", "enable", "xray-grpc"], check=False)
@@ -526,33 +582,46 @@ WantedBy=multi-user.target
 
 
 def write_xray_units(units_dir: "str | None" = None,
-                     xray_bin: "str | None" = None,
-                     config_dir: "str | None" = None) -> "list[str]":
-    """Создать 3 unit-файла: reality (443), grpc (50001), xhttp (50002).
-
-    Пути берутся из config.* внутри функции (не в дефолтах), чтобы
-    монkeypatch в тестах работал корректно.
-    """
+                      xray_bin: "str | None" = None,
+                      config_dir: "str | None" = None,
+                      include_ws: "bool | None" = None) -> "list[str]":
+    """Создать unit-файлы reality/grpc/xhttp и, при необходимости, ws."""
     units_dir = units_dir or config.SYSTEMD_DIR
     xray_bin = xray_bin or config.XRAY_BIN
     config_dir = config_dir or config.XRAY_DIR
-    specs = [
-        ("xray-reality.service", "Xray Reality Service",
-         os.path.join(config_dir, "xray-reality.json")),
-        ("xray-grpc.service", "Xray gRPC Service",
-         os.path.join(config_dir, "grpc.json")),
-        ("xray-xhttp.service", "Xray XHTTP Service",
-         os.path.join(config_dir, "xhttp.json")),
-    ]
+    if include_ws is None:
+        include_ws = os.path.isfile(os.path.join(config_dir, "ws.json"))
+    names = ["xray-reality", "xray-grpc", "xray-xhttp"]
+    if include_ws:
+        names.append("xray-ws")
+    descs = {
+        "xray-reality": "Xray Reality Service",
+        "xray-grpc": "Xray gRPC Service",
+        "xray-xhttp": "Xray XHTTP Service",
+        "xray-ws": "Xray WebSocket Service",
+    }
+    configs = {
+        "xray-reality": "xray-reality.json",
+        "xray-grpc": "grpc.json",
+        "xray-xhttp": "xhttp.json",
+        "xray-ws": "ws.json",
+    }
     written = []
     os.makedirs(units_dir, exist_ok=True)
-    for name, desc, cfg in specs:
-        content = _UNIT_TPL.format(desc=desc, xray_bin=xray_bin,
+    for svc in names:
+        cfg = os.path.join(config_dir, configs[svc])
+        content = _UNIT_TPL.format(desc=descs[svc], xray_bin=xray_bin,
                                    config_path=cfg)
-        path = os.path.join(units_dir, name)
+        path = os.path.join(units_dir, svc + ".service")
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(content)
         written.append(path)
+    if not include_ws:
+        unit = os.path.join(units_dir, "xray-ws.service")
+        if os.path.isfile(unit):
+            os.remove(unit)
+        shutil.rmtree(os.path.join(units_dir, "xray-ws.service.d"),
+                      ignore_errors=True)
     return written
 
 
@@ -560,7 +629,9 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
                       reality_port: int = config.REALITY_PUBLIC_PORT,
                       xhttp_mode: str = "auto",
                       private_key: "str | None" = None,
-                      server_name: "str | None" = None) -> dict:
+                      server_name: "str | None" = None,
+                      vless_encryption: "bool | None" = None,
+                      reality_mode: "str | None" = None) -> dict:
     """Сгенерировать ВСЕ конфиги сразу (полные, self-steal).
 
     Параметр reality_dest оставлен ради совместимости вызовов и не
@@ -575,6 +646,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
     uuid_ = generate_uuid()
     grpc_service = system.generate_grpc_service()
     xhttp_path = _norm_path(system.generate_random_path())
+    ws_path = _norm_path(system.generate_random_path())
     short_id = generate_short_id()
 
     if private_key:
@@ -586,20 +658,72 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
     sname = server_name or domain
     proxy_host = urllib.parse.urlparse(stub).netloc or domain
 
+    if vless_encryption is None:
+        vless_encryption = (
+            not os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json"))
+            and not os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json.disabled"))
+            and not config.vwn_conf_get("VLESS_DECRYPTION")
+        )
+    decryption = "none"
+    if vless_encryption:
+        existing_dec = config.vwn_conf_get("VLESS_DECRYPTION")
+        existing_enc = config.vwn_conf_get("VLESS_ENCRYPTION")
+        if existing_dec and existing_enc:
+            decryption = existing_dec
+        else:
+            dec, enc = generate_vless_keypair()
+            if dec and enc:
+                decryption = dec
+                config.vwn_conf_set("VLESS_DECRYPTION", dec)
+                config.vwn_conf_set("VLESS_ENCRYPTION", enc)
+            else:
+                print("  VLESS Encryption недоступна: xray vlessenc не сработал")
+    if reality_mode is None:
+        if (config.vwn_conf_get("REALITY_MODE")
+                or os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json"))
+                or os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json.disabled"))):
+            reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
+        else:
+            reality_mode = "xhttp"
+
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
-                         uuid_, sname, priv, short_id,
-                         port=reality_port)
+                          uuid_, sname, priv, short_id,
+                          port=reality_port, decryption=decryption)
     write_grpc_config(os.path.join(config.XRAY_DIR, "grpc.json"),
-                      uuid_, config.XRAY_GRPC_PORT, grpc_service)
+                       uuid_, config.XRAY_GRPC_PORT, grpc_service,
+                       decryption=decryption)
     write_xhttp_config(os.path.join(config.XRAY_DIR, "xhttp.json"),
-                       uuid_, config.XRAY_XHTTP_PORT, xhttp_path, domain,
-                       mode=xhttp_mode)
+                        uuid_, config.XRAY_XHTTP_PORT, xhttp_path, domain,
+                        mode=xhttp_mode, decryption=decryption)
+    write_ws_config(os.path.join(config.XRAY_DIR, "ws.json"),
+                    uuid_, config.XRAY_WS_PORT, ws_path,
+                    decryption=decryption)
 
     tpl = os.path.join(os.path.dirname(__file__), "..", "data", "nginx_loopback.conf")
+    ws_map = ("map $http_upgrade $connection_upgrade {\n"
+              "    default upgrade;\n"
+              "    '' close;\n"
+              "}")
+    ws_location = ("location ^~ " + ws_path + " {\n"
+                   '    if ($http_upgrade !~* "websocket") { return 404; }\n'
+                   "    client_max_body_size 0;\n"
+                   "    proxy_http_version 1.1;\n"
+                   "    proxy_set_header Upgrade $http_upgrade;\n"
+                   "    proxy_set_header Connection $connection_upgrade;\n"
+                   "    proxy_set_header Host $host;\n"
+                   "    proxy_set_header X-Real-IP $remote_addr;\n"
+                   "    proxy_buffering off;\n"
+                   "    proxy_read_timeout 1w;\n"
+                   "    proxy_send_timeout 1w;\n"
+                   "    access_log off;\n"
+                   "    proxy_pass http://127.0.0.1:" + str(config.XRAY_WS_PORT) + ";\n"
+                   "}")
     write_nginx_loopback_config(
         tpl, config.NGINX_LOOPBACK_CONF,
         NGINX_LOOPBACK_PORT=config.NGINX_LOOPBACK_PORT, DOMAIN=domain, STUB=stub,
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
+        WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
+        WS_MAP=ws_map, WS_LOCATION=ws_location,
         XRAY_GRPC_PORT=config.XRAY_GRPC_PORT, XRAY_XHTTP_PORT=config.XRAY_XHTTP_PORT,
     )
 
@@ -608,13 +732,21 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
     config.vwn_conf_set("UUID", uuid_)
     config.vwn_conf_set("GRPC_SERVICE", grpc_service)
     config.vwn_conf_set("XHTTP_PATH", xhttp_path)
+    config.vwn_conf_set("WS_PATH", ws_path)
     config.vwn_conf_set("REALITY_DEST", f"{sname}:443")
     config.vwn_conf_set("REALITY_PORT", str(reality_port))
     config.vwn_conf_set("XHTTP_MODE", xhttp_mode)
+    config.vwn_conf_set("REALITY_MODE", reality_mode)
+    if reality_mode == "xhttp":
+        config.vwn_conf_set("REALITY_XHTTP_PATH", xhttp_path)
+        config.vwn_conf_set("REALITY_XHTTP_MODE", xhttp_mode)
     config.vwn_conf_set("REALITY_PUBKEY", pub)
     config.vwn_conf_set("SHORT_ID", short_id)
 
-    units = write_xray_units()
+    if reality_mode == "xhttp":
+        set_reality_mode("xhttp", xhttp_path=xhttp_path, xhttp_mode=xhttp_mode,
+                         restart=False)
+    units = write_xray_units(include_ws=True)
 
     from vwn.modules.warp import reapply_warp
     reapply_warp()
@@ -643,7 +775,7 @@ def rebuild_configs() -> None:
     заменяется на DOMAIN. После пересборки нужен restart xray-reality.
     """
     # установки до перехода на gRPC: WS_PATH/xray-ws/config.json → gRPC
-    migrate_ws_to_grpc()
+    had_legacy = migrate_ws_to_grpc()
 
     domain = config.vwn_conf_get("DOMAIN")
     stub = config.vwn_conf_get("STUB_URL")
@@ -653,6 +785,17 @@ def rebuild_configs() -> None:
     short_id = config.vwn_conf_get("SHORT_ID")
     reality_port = int(config.vwn_conf_get("REALITY_PORT") or config.REALITY_PUBLIC_PORT)
     xhttp_mode = config.vwn_conf_get("XHTTP_MODE") or "auto"
+    decryption = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
+    if decryption and decryption != "none" and not config.vwn_conf_get("VLESS_ENCRYPTION"):
+        decryption = "none"
+    ws_disabled = "ws" in get_disabled_protocols() if False else False
+    try:
+        from vwn.modules.sub import get_disabled_protocols
+        ws_disabled = "ws" in get_disabled_protocols()
+    except Exception:
+        ws_disabled = False
+    ws_on = (not had_legacy) and (not ws_disabled)
+    ws_path = _norm_path(config.vwn_conf_get("WS_PATH") or "")
     if not all([domain, stub, uuid_, grpc_service, config.vwn_conf_get("XHTTP_PATH"),
                 short_id]):
         raise RuntimeError("Конфиг неполный — сначала выполните vwn install")
@@ -671,18 +814,38 @@ def rebuild_configs() -> None:
     config.vwn_conf_set("REALITY_DEST", f"{domain}:443")
     config.vwn_conf_set("XHTTP_PATH", xhttp_path)
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
-                         uuid_, server_name,
-                         private_key, short_id, port=reality_port)
+                          uuid_, server_name,
+                          private_key, short_id, port=reality_port,
+                          decryption=decryption)
 
     reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
     if reality_mode != "tcp":
         set_reality_mode(reality_mode, restart=False)
 
     write_grpc_config(os.path.join(config.XRAY_DIR, "grpc.json"),
-                      uuid_, config.XRAY_GRPC_PORT, grpc_service)
+                       uuid_, config.XRAY_GRPC_PORT, grpc_service,
+                       decryption=decryption)
     write_xhttp_config(os.path.join(config.XRAY_DIR, "xhttp.json"),
-                       uuid_, config.XRAY_XHTTP_PORT, xhttp_path, domain,
-                       mode=xhttp_mode)
+                        uuid_, config.XRAY_XHTTP_PORT, xhttp_path, domain,
+                        mode=xhttp_mode, decryption=decryption)
+
+    if ws_on:
+        if not ws_path or ws_path == "/":
+            ws_path = _norm_path(system.generate_random_path())
+            config.vwn_conf_set("WS_PATH", ws_path)
+        write_ws_config(os.path.join(config.XRAY_DIR, "ws.json"),
+                        uuid_, config.XRAY_WS_PORT, ws_path,
+                        decryption=decryption)
+        shell.run(["systemctl", "enable", "xray-ws"], check=False)
+        shell.run(["systemctl", "restart", "xray-ws"], check=False)
+    else:
+        p = os.path.join(config.XRAY_DIR, "ws.json")
+        if os.path.isfile(p):
+            os.rename(p, p + ".disabled")
+        shell.run(["systemctl", "disable", "xray-ws"], check=False)
+        shell.run(["systemctl", "stop", "xray-ws"], check=False)
+
+    write_xray_units(include_ws=ws_on)
 
     from vwn.modules.users import apply_users_to_configs
     apply_users_to_configs()
@@ -711,7 +874,30 @@ def _re_render_nginx(**overrides) -> None:
                     or config.vwn_conf_get("GRPC_SERVICE") or "grpc")
     xhttp_path = _norm_path(overrides.get("xhttp_path")
                             or config.vwn_conf_get("XHTTP_PATH") or "/xhttp")
+    ws_path = _norm_path(overrides.get("ws_path")
+                         or config.vwn_conf_get("WS_PATH") or "")
     proxy_host = overrides.get("proxy_host") or urlparse(stub).netloc or domain
+    ws_on = os.path.isfile(os.path.join(config.XRAY_DIR, "ws.json")) and bool(ws_path)
+    if ws_on:
+        ws_map = ("map $http_upgrade $connection_upgrade {\n"
+                  "    default upgrade;\n    '' close;\n}")
+        ws_location = ("location ^~ " + ws_path + " {\n"
+                       "    if ($http_upgrade !~* \"websocket\") { return 404; }\n"
+                       "    client_max_body_size 0;\n"
+                       "    proxy_http_version 1.1;\n"
+                       "    proxy_set_header Upgrade $http_upgrade;\n"
+                       "    proxy_set_header Connection $connection_upgrade;\n"
+                       "    proxy_set_header Host $host;\n"
+                       "    proxy_set_header X-Real-IP $remote_addr;\n"
+                       "    proxy_buffering off;\n"
+                       "    proxy_read_timeout 1w;\n"
+                       "    proxy_send_timeout 1w;\n"
+                       "    access_log off;\n"
+                       "    proxy_pass http://127.0.0.1:" + str(config.XRAY_WS_PORT) + ";\n"
+                       "}")
+    else:
+        ws_map = ""
+        ws_location = ""
     try:
         system._write_nginx_main_conf()
     except OSError:
@@ -720,6 +906,8 @@ def _re_render_nginx(**overrides) -> None:
         tpl, config.NGINX_LOOPBACK_CONF,
         NGINX_LOOPBACK_PORT=config.NGINX_LOOPBACK_PORT, DOMAIN=domain, STUB=stub,
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
+        WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
+        WS_MAP=ws_map, WS_LOCATION=ws_location,
         XRAY_GRPC_PORT=config.XRAY_GRPC_PORT, XRAY_XHTTP_PORT=config.XRAY_XHTTP_PORT,
     )
 
@@ -727,12 +915,18 @@ def _re_render_nginx(**overrides) -> None:
 def read_grpc_xhttp_info() -> dict:
     grpc_cfg = _read_json(os.path.join(config.XRAY_DIR, "grpc.json"))
     xh_cfg = _read_json(os.path.join(config.XRAY_DIR, "xhttp.json"))
+    ws_cfg = _read_json(os.path.join(config.XRAY_DIR, "ws.json"))
     info = {
         "domain": config.vwn_conf_get("DOMAIN") or "",
         "stub_url": config.vwn_conf_get("STUB_URL") or "",
         "uuid": config.vwn_conf_get("UUID") or "",
         "grpc_active": grpc_cfg is not None,
         "xhttp_active": xh_cfg is not None,
+        "ws_active": ws_cfg is not None,
+        "ws_path": (ws_cfg.get("inbounds", [{}])[0].get("streamSettings", {})
+                    .get("wsSettings", {}).get("path", "")
+                    if ws_cfg else (config.vwn_conf_get("WS_PATH") or "")),
+        "vless_encryption": config.vwn_conf_get("VLESS_ENCRYPTION") or "none",
     }
     info["grpc_mode"] = config.vwn_conf_get("GRPC_MODE") or "gun"
     if grpc_cfg:
@@ -946,3 +1140,84 @@ def enable_xhttp() -> None:
     _del_disabled("xhttp")
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
+
+
+def disable_ws() -> None:
+    shell.run(["systemctl", "stop", "xray-ws"], check=False)
+    shell.run(["systemctl", "disable", "xray-ws"], check=False)
+    p = os.path.join(config.XRAY_DIR, "ws.json")
+    if os.path.isfile(p):
+        os.rename(p, p + ".disabled")
+    _add_disabled("ws")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+    _re_render_nginx()
+    shell.run(["systemctl", "reload", "nginx"], check=False)
+
+
+def enable_ws() -> None:
+    p = os.path.join(config.XRAY_DIR, "ws.json.disabled")
+    if os.path.isfile(p):
+        os.rename(p, p.removesuffix(".disabled"))
+    shell.run(["systemctl", "enable", "xray-ws"], check=False)
+    shell.run(["systemctl", "start", "xray-ws"], check=False)
+    _del_disabled("ws")
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+    _re_render_nginx()
+    shell.run(["systemctl", "reload", "nginx"], check=False)
+
+
+def update_ws_path(path: str) -> None:
+    p = os.path.join(config.XRAY_DIR, "ws.json")
+    cfg = _read_json(p)
+    if cfg is None:
+        raise RuntimeError("WS не установлен")
+    path = _norm_path(path)
+    ib = cfg.get("inbounds", [{}])[0]
+    ss = ib.setdefault("streamSettings", {})
+    wss = ss.setdefault("wsSettings", {})
+    wss["path"] = path
+    _write_json(p, cfg)
+    config.vwn_conf_set("WS_PATH", path)
+    _re_render_nginx()
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+    shell.run(["systemctl", "restart", "xray-ws"], check=False)
+    shell.run(["systemctl", "reload", "nginx"], check=False)
+
+
+def read_vless_encryption() -> dict:
+    dec = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
+    enc = config.vwn_conf_get("VLESS_ENCRYPTION") or "none"
+    if dec == "none" or enc == "none":
+        return {"enabled": False, "decryption": "none", "encryption": "none"}
+    return {"enabled": True, "decryption": dec, "encryption": enc}
+
+
+def enable_vless_encryption() -> None:
+    print("  Внимание: старые клиенты без поддержки VLESS Encryption перестанут работать")
+    info = read_vless_encryption()
+    if not info["enabled"]:
+        dec, enc = generate_vless_keypair()
+        if not (dec and enc):
+            raise RuntimeError("xray vlessenc недоступен")
+        config.vwn_conf_set("VLESS_DECRYPTION", dec)
+        config.vwn_conf_set("VLESS_ENCRYPTION", enc)
+    # rewrite configs with decryption
+    from vwn.modules.users import apply_users_to_configs
+    rebuild_configs()
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+    for svc in config.XRAY_SERVICES:
+        shell.run(["systemctl", "restart", svc], check=False)
+
+
+def disable_vless_encryption() -> None:
+    config.vwn_conf_set("VLESS_DECRYPTION", "none")
+    config.vwn_conf_del("VLESS_ENCRYPTION")
+    rebuild_configs()
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+    for svc in config.XRAY_SERVICES:
+        shell.run(["systemctl", "restart", svc], check=False)

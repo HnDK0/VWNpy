@@ -16,7 +16,7 @@ _TMPFS_MOUNT = "/etc/systemd/system/var-log-xray.mount"
 
 def _xray_configs() -> list[str]:
     d = "/usr/local/etc/xray"
-    return [os.path.join(d, f) for f in ["grpc.json", "xray-reality.json", "xhttp.json"]
+    return [os.path.join(d, f) for f in config.XRAY_CONFIG_FILES
             if os.path.isfile(os.path.join(d, f))]
 
 
@@ -161,10 +161,11 @@ def enable() -> None:
         webjail_disable()
     except Exception as exc:
         logging.debug("webjail_disable during privacy enable failed: %s", exc)
-    for svc in ["xray-reality"]:
+    for svc in config.XRAY_SERVICES:
         _systemd_output(svc, "disable")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    shell.run(["systemctl", "restart", "xray-reality"], check=False)
+    for svc in config.XRAY_SERVICES:
+        shell.run(["systemctl", "restart", svc], check=False)
     _enable_tmpfs()
     _shred_logs()
     config.vwn_conf_set(_PRIVACY_FLAG, "1")
@@ -175,12 +176,14 @@ def disable() -> None:
         return
     _xray_restore_log()
     _nginx_set_access_log("on")
-    for svc in ["xray-reality"]:
+    for svc in config.XRAY_SERVICES:
         _systemd_output(svc, "restore")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    shell.run(["systemctl", "stop", "xray-reality"], check=False)
+    for svc in config.XRAY_SERVICES:
+        shell.run(["systemctl", "stop", svc], check=False)
     _disable_tmpfs()
-    shell.run(["systemctl", "start", "xray-reality"], check=False)
+    for svc in config.XRAY_SERVICES:
+        shell.run(["systemctl", "start", svc], check=False)
     config.vwn_conf_set(_PRIVACY_FLAG, "0")
 
 

@@ -5,6 +5,7 @@ REALITY_DEST, REALITY_PORT, REALITY_PUBKEY, SHORT_ID, XHTTP_MODE) для пос�
 """
 
 import base64
+import json
 import os
 import re
 import secrets
@@ -23,6 +24,23 @@ def _reality_xhttp_mode(mode: str) -> str:
     return mode if mode and mode != "auto" else "stream-one"
 
 
+_XHTTP_CLIENT_EXTRA = {
+    "xmux": {
+        "cMaxReuseTimes": 0,
+        "maxConcurrency": "16-32",
+        "hKeepAlivePeriod": 15,
+        "hMaxRequestTimes": "600-900",
+        "hMaxReusableSecs": "1800-3000",
+    },
+    "noGRPCHeader": True,
+    "xPaddingBytes": "100-1000",
+}
+
+
+def _xhttp_client_extra_json() -> str:
+    return json.dumps(_XHTTP_CLIENT_EXTRA, separators=(",", ":"))
+
+
 def generate_reality_url(
     uuid_val: str,
     server_ip: str,
@@ -33,17 +51,21 @@ def generate_reality_url(
     name: str,
     mode: str = "tcp",
     xhttp_path: str = "",
-    xhttp_extra: str = "",
+    xhttp_mode: str = "",
+    extra_json: str | None = None,
+    vless_encryption: str = "none",
 ) -> str:
     base = (
         f"vless://{uuid_val}@{server_ip}:{port}"
-        f"?encryption=none&security=reality"
+        f"?encryption={_urlencode(vless_encryption)}&security=reality"
         f"&sni={dest_host}&fp=chrome&pbk={pub_key}&sid={short_id}&support-x25519mlkem768=true"
     )
     if mode == "xhttp":
         path = xhttp_path or "/r"
-        rmode = _reality_xhttp_mode(xhttp_extra)
+        rmode = _reality_xhttp_mode(xhttp_mode)
         extra = f"&alpn=h2&path={_urlencode(path)}&mode={rmode}&host={dest_host}"
+        if extra_json:
+            extra += f"&extra={_urlencode(extra_json)}"
         return f"{base}&type=xhttp{extra}#{_urlencode(name)}"
     return f"{base}&type=tcp&flow=xtls-rprx-vision#{_urlencode(name)}"
 
@@ -56,6 +78,7 @@ def generate_grpc_url(
     domain: str,
     name: str,
     mode: str = "gun",
+    vless_encryption: str = "none",
 ) -> str:
     """VLESS+gRPC+TLS. gRPC работает только поверх h2 → alpn=h2 обязателен.
 
@@ -65,7 +88,7 @@ def generate_grpc_url(
     """
     return (
         f"vless://{uuid_val}@{connect_host}:{port}"
-        f"?encryption=none&security=tls"
+        f"?encryption={_urlencode(vless_encryption)}&security=tls"
         f"&sni={domain}&fp=chrome&alpn=h2"
         f"&type=grpc&path={_urlencode(service_name)}&serviceName={_urlencode(service_name)}"
         f"&mode={mode}&authority={domain}"
@@ -80,13 +103,35 @@ def generate_xhttp_url(
     domain: str,
     name: str,
     mode: str = "auto",
+    extra_json: str | None = None,
+    vless_encryption: str = "none",
 ) -> str:
     encoded_path = _urlencode(xhttp_path)
-    return (
+    url = (
         f"vless://{uuid_val}@{connect_host}:{port}"
-        f"?encryption=none&security=tls&type=xhttp&path={encoded_path}"
+        f"?encryption={_urlencode(vless_encryption)}&security=tls&type=xhttp&path={encoded_path}"
         f"&mode={mode}&alpn=h2&host={domain}&sni={domain}"
         f"&fp=chrome"
+    )
+    if extra_json:
+        url += f"&extra={_urlencode(extra_json)}"
+    return f"{url}#{_urlencode(name)}"
+
+
+def generate_ws_url(
+    uuid_val: str,
+    connect_host: str,
+    port: int,
+    ws_path: str,
+    domain: str,
+    name: str,
+    vless_encryption: str = "none",
+) -> str:
+    return (
+        f"vless://{uuid_val}@{connect_host}:{port}"
+        f"?encryption={_urlencode(vless_encryption)}&security=tls"
+        f"&sni={domain}&fp=chrome&alpn=http%2F1.1"
+        f"&type=ws&path={_urlencode(ws_path)}&host={domain}"
         f"#{_urlencode(name)}"
     )
 
@@ -147,10 +192,15 @@ def build_mihomo_proxies(
     xhttp_path_reality: str,
     xhttp_extra_mode: str,
     disabled: set[str],
+    ws_path: str = "",
+    vless_encryption: str = "none",
 ) -> list[dict]:
     proxies: list[dict] = []
+    enc = "" if vless_encryption in ("", "none") else vless_encryption
+    cdn = connect_host != domain
 
-    if grpc_service and "grpc" not in disabled:
+    # gRPC только через CDN
+    if cdn and grpc_service and "grpc" not in disabled:
         proxies.append({
             "name": users.get_config_name("gRPC", label),
             "type": "vless",
@@ -162,15 +212,49 @@ def build_mihomo_proxies(
             "servername": domain,
             "client-fingerprint": "chrome",
             "network": "grpc",
+            "encryption": enc,
             "grpc-opts": {
                 "grpc-service-name": grpc_service,
                 "ping-interval": 15,
             },
         })
 
+    # XHTTP direct всегда
     if xhttp_path and "xhttp" not in disabled:
         proxies.append({
             "name": users.get_config_name("XHTTP", label),
+            "type": "vless",
+            "server": server_ip,
+            "port": 443,
+            "uuid": uuid_val,
+            "udp": True,
+            "tls": True,
+            "servername": domain,
+            "client-fingerprint": "chrome",
+            "network": "xhttp",
+            "encryption": enc,
+            "alpn": ["h2"],
+            "xhttp-opts": {
+                "path": xhttp_path,
+                "mode": xhttp_mode or "auto",
+                "host": domain,
+                "no-grpc-header": True,
+                "x-padding-bytes": "100-1000",
+                "reuse-settings": {
+                    "max-concurrency": "16-32",
+                    "max-connections": 0,
+                    "c-max-reuse-times": 0,
+                    "h-max-request-times": "600-900",
+                    "h-max-reusable-secs": "1800-3000",
+                    "h-keep-alive-period": 15,
+                },
+            },
+        })
+
+    # XHTTP через CDN
+    if cdn and xhttp_path and "xhttp" not in disabled:
+        proxies.append({
+            "name": users.get_config_name("XHTTP-CDN", label),
             "type": "vless",
             "server": connect_host,
             "port": 443,
@@ -180,10 +264,42 @@ def build_mihomo_proxies(
             "servername": domain,
             "client-fingerprint": "chrome",
             "network": "xhttp",
+            "encryption": enc,
             "alpn": ["h2"],
             "xhttp-opts": {
                 "path": xhttp_path,
                 "mode": xhttp_mode or "auto",
+                "host": domain,
+                "no-grpc-header": True,
+                "x-padding-bytes": "100-1000",
+                "reuse-settings": {
+                    "max-concurrency": "16-32",
+                    "max-connections": 0,
+                    "c-max-reuse-times": 0,
+                    "h-max-request-times": "600-900",
+                    "h-max-reusable-secs": "1800-3000",
+                    "h-keep-alive-period": 15,
+                },
+            },
+        })
+
+    # WS только через CDN
+    if cdn and ws_path and "ws" not in disabled:
+        proxies.append({
+            "name": users.get_config_name("WS", label),
+            "type": "vless",
+            "server": connect_host,
+            "port": 443,
+            "uuid": uuid_val,
+            "udp": True,
+            "tls": True,
+            "servername": domain,
+            "client-fingerprint": "chrome",
+            "network": "ws",
+            "encryption": enc,
+            "ws-opts": {
+                "path": ws_path,
+                "headers": {"Host": domain},
             },
         })
 
@@ -206,10 +322,22 @@ def build_mihomo_proxies(
                     "support-x25519mlkem768": True,
                 },
                 "network": "xhttp",
+                "encryption": enc,
                 "alpn": ["h2"],
                 "xhttp-opts": {
                     "path": xhttp_path_reality or "/r",
                     "mode": _reality_xhttp_mode(xhttp_extra_mode),
+                    "host": dest_host,
+                    "no-grpc-header": True,
+                    "x-padding-bytes": "100-1000",
+                    "reuse-settings": {
+                        "max-concurrency": "16-32",
+                        "max-connections": 0,
+                        "c-max-reuse-times": 0,
+                        "h-max-request-times": "600-900",
+                        "h-max-reusable-secs": "1800-3000",
+                        "h-keep-alive-period": 15,
+                    },
                 },
             })
         else:
@@ -221,7 +349,7 @@ def build_mihomo_proxies(
                 "uuid": uuid_val,
                 "udp": True,
                 "flow": "xtls-rprx-vision",
-                "encryption": "",
+                "encryption": enc if enc else "",
                 "tls": True,
                 "servername": dest_host,
                 "client-fingerprint": "chrome",
@@ -289,10 +417,18 @@ def generate_mihomo_yaml(proxies: list[dict]) -> str:
         lines.append(f"    tls: {str(p.get('tls', True)).lower()}")
         lines.append(f"    servername: {p['servername']}")
         lines.append(f"    client-fingerprint: {p.get('client-fingerprint', 'chrome')}")
+        def _emit(key, value, indent):
+            if isinstance(value, dict):
+                lines.append(" " * indent + f"{key}:")
+                for k, v in value.items():
+                    _emit(k, v, indent + 2)
+            else:
+                lines.append(" " * indent + f"{key}: {_yaml_str(value)}")
+
         if "reality-opts" in p:
             lines.append("    reality-opts:")
             for k, v in p["reality-opts"].items():
-                lines.append(f"      {k}: {_yaml_str(v)}")
+                _emit(k, v, 6)
         if "network" in p:
             lines.append(f"    network: {p['network']}")
         if "alpn" in p:
@@ -300,11 +436,15 @@ def generate_mihomo_yaml(proxies: list[dict]) -> str:
         if "grpc-opts" in p:
             lines.append("    grpc-opts:")
             for k, v in p["grpc-opts"].items():
-                lines.append(f"      {k}: {_yaml_str(v)}")
+                _emit(k, v, 6)
         if "xhttp-opts" in p:
             lines.append("    xhttp-opts:")
             for k, v in p["xhttp-opts"].items():
-                lines.append(f"      {k}: {_yaml_str(v)}")
+                _emit(k, v, 6)
+        if "ws-opts" in p:
+            lines.append("    ws-opts:")
+            for k, v in p["ws-opts"].items():
+                _emit(k, v, 6)
         lines.append("")
     return "\n".join(lines)
 
@@ -331,6 +471,7 @@ def build_user_html_page(
     sub_yaml_url: str = "",
     page_title: str = "",
     cdn_ip: str = "",
+    connect_host: str = "",
     domain: str = "",
     server_ip: str = "",
     flag_cached: str = "",
@@ -361,7 +502,15 @@ def build_user_html_page(
             proto_label = "XHTTP"
             m = re.search(r"host=([^&]+)", line)
             host_disp = m.group(1) if m else (domain or "")
-            cfg_cdn_ip = cdn_ip
+            sm = re.search(r"vless://[^@]+@([^:]+)", line)
+            cfg_cdn_ip = cdn_ip if (sm and sm.group(1) == connect_host and cdn_ip) else ""
+        elif "type=ws" in line:
+            cfg_type = "ws"
+            proto_label = "WS + TLS"
+            m = re.search(r"host=([^&]+)", line)
+            host_disp = m.group(1) if m else (domain or "")
+            sm = re.search(r"vless://[^@]+@([^:]+)", line)
+            cfg_cdn_ip = cdn_ip if (sm and sm.group(1) == connect_host and cdn_ip) else ""
         else:
             cfg_type = "other"
             proto_label = "VLESS"
@@ -379,12 +528,14 @@ def build_user_html_page(
         "grpc": '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
         "reality": '<svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
         "xhttp": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+        "ws": '<svg viewBox="0 0 24 24"><path d="M4 12h16M4 6h16M4 18h16"/></svg>',
         "other": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>',
     }
     proto_tag_labels = {
         "grpc": "gRPC",
         "reality": "Reality",
         "xhttp": "XHTTP",
+        "ws": "WS",
     }
 
     def render_card(cfg, idx):
@@ -471,6 +622,10 @@ def get_conf_or_none(key: str) -> "str | None":
     return config.vwn_conf_get(key)
 
 
+def get_vless_encryption() -> str:
+    return config.vwn_conf_get("VLESS_ENCRYPTION") or "none"
+
+
 def get_disabled_protocols() -> set[str]:
     raw = config.vwn_conf_get("DISABLED_PROTOCOLS") or ""
     return {p.strip() for p in raw.split(",") if p.strip()}
@@ -510,19 +665,40 @@ def build_user_sub_file(
 
     lines: list[str] = []
     disabled = get_disabled_protocols()
+    enc = get_vless_encryption()
+    client_extra = _xhttp_client_extra_json()
 
-    if grpc_service and "grpc" not in disabled:
+    # gRPC только через CDN
+    if connect_host != domain and grpc_service and "grpc" not in disabled:
         name_grpc = users.get_config_name("gRPC", label)
         lines.append(generate_grpc_url(
             uuid_val, connect_host, 443, grpc_service, domain, name_grpc,
-            mode=grpc_mode,
+            mode=grpc_mode, vless_encryption=enc,
         ))
 
+    # XHTTP direct всегда
     if xhttp_path and "xhttp" not in disabled:
         name_xhttp = users.get_config_name("XHTTP", label)
         lines.append(generate_xhttp_url(
-            uuid_val, connect_host, 443, xhttp_path, domain, name_xhttp,
-            mode=xhttp_mode,
+            uuid_val, server_ip, 443, xhttp_path, domain, name_xhttp,
+            mode=xhttp_mode, extra_json=client_extra, vless_encryption=enc,
+        ))
+
+    # XHTTP через CDN
+    if connect_host != domain and xhttp_path and "xhttp" not in disabled:
+        name_xhttp_cdn = users.get_config_name("XHTTP-CDN", label)
+        lines.append(generate_xhttp_url(
+            uuid_val, connect_host, 443, xhttp_path, domain, name_xhttp_cdn,
+            mode=xhttp_mode, extra_json=client_extra, vless_encryption=enc,
+        ))
+
+    # WS только через CDN
+    ws_path_conf = get_conf_or_none("WS_PATH") or ""
+    if connect_host != domain and ws_path_conf and "ws" not in disabled:
+        name_ws = users.get_config_name("WS", label)
+        lines.append(generate_ws_url(
+            uuid_val, connect_host, 443, ws_path_conf, domain, name_ws,
+            vless_encryption=enc,
         ))
 
     if pub_key and short_id and "reality" not in disabled:
@@ -535,7 +711,8 @@ def build_user_sub_file(
             uuid_val, server_ip, int(reality_port_str),
             short_id, dest_host, pub_key, name_reality,
             mode=reality_mode, xhttp_path=xhttp_path_reality,
-            xhttp_extra=xhttp_extra_mode,
+            xhttp_mode=xhttp_extra_mode, extra_json=client_extra if reality_mode == "xhttp" else None,
+            vless_encryption=enc,
         ))
 
     write_sub_file(output_dir, label, token, lines)
@@ -544,12 +721,13 @@ def build_user_sub_file(
     reality_mode = get_conf_or_none("REALITY_MODE") or "tcp"
     xhttp_path_reality = get_conf_or_none("REALITY_XHTTP_PATH") or ""
     xhttp_extra_mode = get_conf_or_none("REALITY_XHTTP_MODE") or "auto"
+    ws_path_conf = get_conf_or_none("WS_PATH") or ""
     proxies = build_mihomo_proxies(
         uuid_val, label, domain, connect_host, server_ip,
         grpc_service, grpc_mode, xhttp_path, xhttp_mode,
         reality_port_str, reality_dest, pub_key, short_id,
         reality_mode, xhttp_path_reality, xhttp_extra_mode,
-        disabled,
+        disabled, ws_path=ws_path_conf, vless_encryption=get_vless_encryption(),
     )
     write_sub_yaml(output_dir, label, token, proxies)
 
@@ -565,6 +743,7 @@ def build_user_sub_file(
         template_path, html_path, uuid_val, label, sub_url, lines,
         sub_yaml_url=sub_yaml_url,
         domain=domain, server_ip=server_ip, cdn_ip=cdn_ip,
+        connect_host=connect_host,
     )
 
 

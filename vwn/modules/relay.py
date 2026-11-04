@@ -3,7 +3,7 @@ import os
 import re
 import urllib.parse
 
-from vwn.core import shell
+from vwn.core import config, shell
 from vwn.modules._outbound import add_outbound, remove_outbound
 
 TAG = "relay"
@@ -15,7 +15,7 @@ def configure(url: str) -> dict:
     _save_config(parsed)
     ob = _build_outbound(parsed)
     _apply_outbound(ob)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         shell.run(["systemctl", "restart", svc], check=False)
     return parsed
 
@@ -26,7 +26,7 @@ def remove() -> None:
     remove_outbound(TAG)
     from vwn.modules._domains import remove_file as _rmd
     _rmd(TAG)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         shell.run(["systemctl", "restart", svc], check=False)
 
 
@@ -90,7 +90,7 @@ def _apply_outbound(ob: dict) -> None:
     import os as _os
     from vwn.core import config as _cfg
     for path in [_os.path.join(_cfg.XRAY_DIR, p)
-                 for p in ("grpc.json", "xhttp.json", "xray-reality.json")]:
+                 for p in _cfg.XRAY_CONFIG_FILES]:
         if not _os.path.isfile(path):
             continue
         with open(path) as f:

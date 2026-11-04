@@ -22,6 +22,7 @@
   --grpc-icon:#6c47f5;--grpc-dim:#f0edff;
   --re-icon:#d97706;--re-dim:#fff4e0;
   --xh-icon:#0e9f6e;--xh-dim:#ecfdf5;
+  --ws-icon:#2563eb;--ws-dim:#eff6ff;
   --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
 }
 [data-theme="dark"]{
@@ -35,6 +36,7 @@
   --grpc-icon:#a98fff;--grpc-dim:#1e1832;
   --re-icon:#f59e0b;--re-dim:#1c1508;
   --xh-icon:#34d399;--xh-dim:#0a1f14;
+  --ws-icon:#60a5fa;--ws-dim:#0f1f3a;
   --shadow:0 1px 3px rgba(0,0,0,.4);
 }
 
@@ -87,10 +89,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .cfg-icon.grpc{background:var(--grpc-dim)}
 .cfg-icon.reality{background:var(--re-dim)}
 .cfg-icon.xhttp{background:var(--xh-dim)}
+.cfg-icon.ws{background:var(--ws-dim)}
 .cfg-icon svg{width:15px;height:15px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .cfg-icon.grpc svg{stroke:var(--grpc-icon)}
 .cfg-icon.reality svg{stroke:var(--re-icon)}
 .cfg-icon.xhttp svg{stroke:var(--xh-icon)}
+.cfg-icon.ws svg{stroke:var(--ws-icon)}
 .cfg-info{flex:1;min-width:0}
 .cfg-name{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:2px}
 .cfg-host{font-size:10.5px;color:var(--muted);font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:baseline;gap:6px}.cfg-cdn-badge{flex-shrink:0;font-size:9.5px;font-weight:600;font-family:'DM Mono',monospace;color:var(--blue);background:var(--blue-dim);border:1px solid color-mix(in srgb,var(--blue) 25%,transparent);border-radius:4px;padding:1px 5px;letter-spacing:.02em}

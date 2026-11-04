@@ -2,7 +2,7 @@ import os
 import re
 import time
 
-from vwn.core import shell
+from vwn.core import config, shell
 from vwn.modules._outbound import add_outbound, remove_outbound
 
 PORT = 40003
@@ -88,7 +88,7 @@ def install(country: str = "") -> None:
             break
         time.sleep(2)
     add_outbound(TAG, "socks", PORT)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 
 
@@ -109,7 +109,7 @@ def remove() -> None:
     if os.path.isfile(DOMAINS_FILE):
         os.remove(DOMAINS_FILE)
     _runcmd(["apt-get", "remove", "-y", "tor"], timeout=60, check=False)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 
 
@@ -262,7 +262,7 @@ def _apply_domains() -> None:
                 r.pop("port", None)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    for svc in ["xray-reality", "xray-grpc", "xray-xhttp"]:
+    for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 
 
