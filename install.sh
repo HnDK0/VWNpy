@@ -24,6 +24,7 @@ usage() {
   --cert-method  standalone / cf / self              [standalone]
   --bbr      Включить BBR                            [выкл]
   --fail2ban Установить Fail2Ban                      [выкл]
+  --no-vless-enc  Отключить VLESS Encryption           [выкл]
   --help     Показать справку
 
 Полный список флагов: ${REPO}

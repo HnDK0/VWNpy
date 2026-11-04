@@ -86,7 +86,7 @@ def qr(type):
     grpc_mode = vwn_cfg.vwn_conf_get("GRPC_MODE") or "gun"
     xhttp_path = vwn_cfg.vwn_conf_get("XHTTP_PATH")
     xhttp_mode = vwn_cfg.vwn_conf_get("XHTTP_MODE") or "auto"
-
+    xhttp_cdn_mode = vwn_cfg.vwn_conf_get("XHTTP_CDN_MODE") or "auto"
     if not all([uuid, ip, domain]):
         click.echo("Конфиг не полный (запустите vwn install)", err=True)
         return
@@ -117,7 +117,20 @@ def qr(type):
             return
         url = sub.generate_grpc_url(uuid, connect_host, 443, grpc_service, domain, get_config_name("gRPC", label), mode=grpc_mode)
     elif type == "xhttp":
-        url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode)
+        url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False))
+    elif type == "xhttp-cdn":
+        from vwn.core import config as _c
+        connect_host = domain
+        try:
+            ch = open(_c.connect_host_file_path()).read().strip()
+            if ch:
+                connect_host = ch
+        except OSError:
+            pass
+        if connect_host == domain:
+            click.echo("CDN не включён (connect_host == domain)", err=True)
+            return
+        url = sub.generate_xhttp_url(uuid, connect_host, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP-CDN", label), mode=xhttp_cdn_mode or "auto", extra_json=sub._xhttp_client_extra_json(cdn=True))
     elif type == "ws":
         ws_path = vwn_cfg.vwn_conf_get("WS_PATH")
         if not ws_path:
@@ -348,6 +361,41 @@ def close_80():
         if "ACME temp" in line:
             num = line.split("[")[1].split("]")[0]
             shell.run(["ufw", "--force", "delete", num], check=False)
+
+
+@cli.group(name="vless-enc")
+def vless_enc():
+    """Управление VLESS Encryption (mlkem768x25519plus)."""
+    pass
+
+
+@vless_enc.command(name="status")
+def vless_enc_status():
+    from vwn.modules import xray
+    info = xray.read_vless_encryption()
+    click.echo("VLESS Encryption: %s" % ("on" if info["enabled"] else "off"))
+    if info["enabled"]:
+        click.echo("  decryption: %s" % info["decryption"][:24] + "...")
+        click.echo("  encryption: %s" % info["encryption"][:24] + "...")
+
+
+@vless_enc.command(name="on")
+@click.option("--force-new-keys", is_flag=True, default=False)
+def vless_enc_on(force_new_keys):
+    from vwn.modules import xray
+    try:
+        xray.enable_vless_encryption(force_new_keys=force_new_keys)
+    except RuntimeError as exc:
+        click.echo("Ошибка: %s" % exc, err=True)
+        sys.exit(1)
+    click.echo("VLESS Encryption включена.")
+
+
+@vless_enc.command(name="off")
+def vless_enc_off():
+    from vwn.modules import xray
+    xray.disable_vless_encryption()
+    click.echo("VLESS Encryption выключена.")
 
 
 if __name__ == "__main__":

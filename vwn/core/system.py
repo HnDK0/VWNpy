@@ -646,23 +646,44 @@ _VLESS_ENC_RE = re.compile(
 )
 
 
-def generate_vless_keypair() -> "tuple[str | None, str | None]":
+def generate_vless_keypair(strict: bool = False) -> "tuple[str | None, str | None]":
     """Сгенерировать VLESS Encryption (decryption, encryption) с ML-KEM-768.
 
     Возвращает (None, None), если xray недоступен или команда не удалась.
+    При strict=True бросает RuntimeError с причиной.
     """
     if not os.path.isfile(config.XRAY_BIN):
+        if strict:
+            raise RuntimeError("Xray binary not found: " + config.XRAY_BIN)
         return None, None
     try:
         res = shell.run([config.XRAY_BIN, "vlessenc"], capture=True, check=False)
-    except Exception:
+    except Exception as exc:
+        if strict:
+            raise RuntimeError("xray vlessenc failed to run: " + str(exc))
         return None, None
-    if getattr(res, "returncode", 1) != 0:
+    rc = getattr(res, "returncode", 1)
+    stdout = getattr(res, "stdout", "") or ""
+    stderr = getattr(res, "stderr", "") or ""
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", errors="replace")
+    if rc != 0:
+        if strict:
+            ver = ""
+            try:
+                vr = shell.run([config.XRAY_BIN, "version"], capture=True, check=False)
+                ver = (vr.stdout or "").strip().splitlines()[0] if vr.stdout else ""
+            except Exception:
+                pass
+            raise RuntimeError(
+                "xray vlessenc не поддерживается (rc=%d). Ядро: %s. stderr: %s. "
+                "Обновите Xray: vwn update-xray && vwn rebuild"
+                % (rc, ver, (stderr or stdout).strip()[:300])
+            )
         return None, None
-    out = getattr(res, "stdout", "") or ""
-    if isinstance(out, bytes):
-        out = out.decode("utf-8", errors="replace")
-    sections = re.split(r"^Authentication:\s*", out, flags=re.M)
+    sections = re.split(r"^Authentication:\s*", stdout, flags=re.M)
     chosen: str | None = None
     for sec in sections:
         if "ML-KEM-768" in sec:
@@ -674,14 +695,24 @@ def generate_vless_keypair() -> "tuple[str | None, str | None]":
                 chosen = sec
                 break
     if chosen is None:
-        chosen = out
+        chosen = stdout
     dec_m = re.search(r'"decryption":\s*"([^"]+)"', chosen)
     enc_m = re.search(r'"encryption":\s*"([^"]+)"', chosen)
     if not (dec_m and enc_m):
+        if strict:
+            raise RuntimeError(
+                "Не удалось разобрать вывод xray vlessenc. stdout: %s"
+                % stdout.strip()[:300]
+            )
         return None, None
     decryption = dec_m.group(1)
     encryption = enc_m.group(1)
     if not (_VLESS_ENC_RE.search(decryption) and _VLESS_ENC_RE.search(encryption)):
+        if strict:
+            raise RuntimeError(
+                "Вывод xray vlessenc не совпал с ожидаемым форматом. stdout: %s"
+                % stdout.strip()[:300]
+            )
         return None, None
     return decryption, encryption
 

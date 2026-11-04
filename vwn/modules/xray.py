@@ -82,9 +82,9 @@ def all_services() -> list[str]:
     return list(config.XRAY_SERVICES)
 
 
-def generate_vless_keypair() -> "tuple[str | None, str | None]":
+def generate_vless_keypair(strict: bool = False) -> "tuple[str | None, str | None]":
     """Обёртка над system.generate_vless_keypair (для единообразия и тестов)."""
-    return system.generate_vless_keypair()
+    return system.generate_vless_keypair(strict=strict)
 
 
 _XHTTP_SERVER_EXTRA = {"xPaddingBytes": "100-1000"}
@@ -542,11 +542,20 @@ def enable_reality() -> None:
 
 
 def set_xhttp_mode(mode: str) -> None:
-    """Режим XHTTP для КЛИЕНТСКИХ ссылок. Серверный inbound всегда auto,
+    """Режим XHTTP для КЛИЕНТСКИХ ссылок (direct). Серверный inbound всегда auto,
     поэтому JSON и сервис не трогаем."""
     if _read_json(os.path.join(config.XRAY_DIR, "xhttp.json")) is None:
         raise RuntimeError("XHTTP не установлен")
     config.vwn_conf_set("XHTTP_MODE", mode)
+    from vwn.modules.sub import rebuild_all_sub_files
+    rebuild_all_sub_files()
+
+
+def set_xhttp_cdn_mode(mode: str) -> None:
+    """Режим XHTTP для КЛИЕНТСКИХ ссылок через CDN."""
+    if _read_json(os.path.join(config.XRAY_DIR, "xhttp.json")) is None:
+        raise RuntimeError("XHTTP не установлен")
+    config.vwn_conf_set("XHTTP_CDN_MODE", mode)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
 
@@ -658,26 +667,12 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
     sname = server_name or domain
     proxy_host = urllib.parse.urlparse(stub).netloc or domain
 
-    if vless_encryption is None:
-        vless_encryption = (
-            not os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json"))
-            and not os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json.disabled"))
-            and not config.vwn_conf_get("VLESS_DECRYPTION")
-        )
-    decryption = "none"
-    if vless_encryption:
-        existing_dec = config.vwn_conf_get("VLESS_DECRYPTION")
-        existing_enc = config.vwn_conf_get("VLESS_ENCRYPTION")
-        if existing_dec and existing_enc:
-            decryption = existing_dec
-        else:
-            dec, enc = generate_vless_keypair()
-            if dec and enc:
-                decryption = dec
-                config.vwn_conf_set("VLESS_DECRYPTION", dec)
-                config.vwn_conf_set("VLESS_ENCRYPTION", enc)
-            else:
-                print("  VLESS Encryption недоступна: xray vlessenc не сработал")
+    if vless_encryption is False:
+        config.vwn_conf_set("VLESS_DECRYPTION", "none")
+        config.vwn_conf_del("VLESS_ENCRYPTION")
+        decryption = "none"
+    else:
+        decryption = resolve_vless_policy(force=(vless_encryption is True))
     if reality_mode is None:
         if (config.vwn_conf_get("REALITY_MODE")
                 or os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json"))
@@ -774,6 +769,9 @@ def rebuild_configs() -> None:
     Для уже установленных серверов это же миграция на self-steal: SNI Reality
     заменяется на DOMAIN. После пересборки нужен restart xray-reality.
     """
+    # Сначала политика VLESS Encryption (fail-fast, до миграции и записи)
+    decryption = resolve_vless_policy()
+
     # установки до перехода на gRPC: WS_PATH/xray-ws/config.json → gRPC
     had_legacy = migrate_ws_to_grpc()
 
@@ -785,10 +783,7 @@ def rebuild_configs() -> None:
     short_id = config.vwn_conf_get("SHORT_ID")
     reality_port = int(config.vwn_conf_get("REALITY_PORT") or config.REALITY_PUBLIC_PORT)
     xhttp_mode = config.vwn_conf_get("XHTTP_MODE") or "auto"
-    decryption = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
-    if decryption and decryption != "none" and not config.vwn_conf_get("VLESS_ENCRYPTION"):
-        decryption = "none"
-    ws_disabled = "ws" in get_disabled_protocols() if False else False
+    ws_disabled = False
     try:
         from vwn.modules.sub import get_disabled_protocols
         ws_disabled = "ws" in get_disabled_protocols()
@@ -800,7 +795,11 @@ def rebuild_configs() -> None:
                 short_id]):
         raise RuntimeError("Конфиг неполный — сначала выполните vwn install")
 
-    r_cfg = _read_json(os.path.join(config.XRAY_DIR, "xray-reality.json"))
+    reality_path = os.path.join(config.XRAY_DIR, "xray-reality.json")
+    reality_disabled = reality_path + ".disabled"
+    r_cfg = _read_json(reality_path)
+    if r_cfg is None:
+        r_cfg = _read_json(reality_disabled)
     if r_cfg is None:
         raise RuntimeError("xray-reality.json не найден — невозможно пересобрать")
     private_key = (r_cfg.get("inbounds", [{}])[0]
@@ -808,6 +807,8 @@ def rebuild_configs() -> None:
                    .get("privateKey", ""))
     if not private_key:
         raise RuntimeError("Reality private_key не найден в текущем конфиге")
+    # Если Reality был отключён, пересборка не должна оставлять его выключенным
+    # без явного пользователя; конфиг пересоздаётся, но статус сохраняется.
 
     # Self-steal: SNI Reality = DOMAIN.
     server_name = domain
@@ -837,7 +838,6 @@ def rebuild_configs() -> None:
                         uuid_, config.XRAY_WS_PORT, ws_path,
                         decryption=decryption)
         shell.run(["systemctl", "enable", "xray-ws"], check=False)
-        shell.run(["systemctl", "restart", "xray-ws"], check=False)
     else:
         p = os.path.join(config.XRAY_DIR, "ws.json")
         if os.path.isfile(p):
@@ -846,6 +846,26 @@ def rebuild_configs() -> None:
         shell.run(["systemctl", "stop", "xray-ws"], check=False)
 
     write_xray_units(include_ws=ws_on)
+
+    # Валидация конфигов до рестарта (на dev-машине без xray пропускаем)
+    if os.path.isfile(config.XRAY_BIN):
+        for _cfg_name in ("xray-reality.json", "grpc.json", "xhttp.json"):
+            _p = os.path.join(config.XRAY_DIR, _cfg_name)
+            if os.path.isfile(_p):
+                _r = shell.run([config.XRAY_BIN, "-test", "-config", _p],
+                               capture=True, check=False, timeout=15)
+                if _r is not None and _r.returncode != 0:
+                    raise RuntimeError(
+                        "Xray config invalid: %s\n%s" % (_cfg_name, (_r.stdout or _r.stderr or "").strip()[-500:])
+                    )
+        if ws_on and os.path.isfile(os.path.join(config.XRAY_DIR, "ws.json")):
+            _p = os.path.join(config.XRAY_DIR, "ws.json")
+            _r = shell.run([config.XRAY_BIN, "-test", "-config", _p],
+                           capture=True, check=False, timeout=15)
+            if _r is not None and _r.returncode != 0:
+                raise RuntimeError(
+                    "Xray config invalid: ws.json\n%s" % ((_r.stdout or _r.stderr or "").strip()[-500:])
+                )
 
     from vwn.modules.users import apply_users_to_configs
     apply_users_to_configs()
@@ -945,6 +965,7 @@ def read_grpc_xhttp_info() -> dict:
         info["xhttp_path"] = config.vwn_conf_get("XHTTP_PATH") or ""
     # mode — клиентский; серверный inbound всегда auto (см. _xhttp_server_settings)
     info["xhttp_mode"] = config.vwn_conf_get("XHTTP_MODE") or "auto"
+    info["xhttp_cdn_mode"] = config.vwn_conf_get("XHTTP_CDN_MODE") or "auto"
     return info
 
 
@@ -1195,22 +1216,44 @@ def read_vless_encryption() -> dict:
     return {"enabled": True, "decryption": dec, "encryption": enc}
 
 
-def enable_vless_encryption() -> None:
+def _generate_and_store_vless() -> str:
+    dec, enc = generate_vless_keypair(strict=True)
+    if not (dec and enc):
+        raise RuntimeError("xray vlessenc не вернул ключи")
+    config.vwn_conf_set("VLESS_DECRYPTION", dec)
+    config.vwn_conf_set("VLESS_ENCRYPTION", enc)
+    return dec
+
+
+def resolve_vless_policy(force_new_keys: bool = False,
+                        force: bool = False) -> str:
+    dec = config.vwn_conf_get("VLESS_DECRYPTION")
+    enc = config.vwn_conf_get("VLESS_ENCRYPTION")
+    if dec == "none":
+        if force:
+            return _generate_and_store_vless()
+        return "none"
+    if dec and enc:
+        return dec
+    if dec and not enc:
+        if force or force_new_keys:
+            return _generate_and_store_vless()
+        raise RuntimeError(
+            "VLESS_DECRYPTION есть, но VLESS_ENCRYPTION потерян. "
+            "Запустите vwn vless-enc on --force-new-keys "
+            "(все клиенты должны переимпортировать подписку)."
+        )
+    # ключа нет -> default-on
+    return _generate_and_store_vless()
+
+
+def enable_vless_encryption(force_new_keys: bool = False) -> None:
     print("  Внимание: старые клиенты без поддержки VLESS Encryption перестанут работать")
-    info = read_vless_encryption()
-    if not info["enabled"]:
-        dec, enc = generate_vless_keypair()
-        if not (dec and enc):
-            raise RuntimeError("xray vlessenc недоступен")
-        config.vwn_conf_set("VLESS_DECRYPTION", dec)
-        config.vwn_conf_set("VLESS_ENCRYPTION", enc)
+    resolve_vless_policy(force_new_keys=force_new_keys)
     # rewrite configs with decryption
-    from vwn.modules.users import apply_users_to_configs
     rebuild_configs()
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
-    for svc in config.XRAY_SERVICES:
-        shell.run(["systemctl", "restart", svc], check=False)
 
 
 def disable_vless_encryption() -> None:

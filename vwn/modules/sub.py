@@ -24,7 +24,7 @@ def _reality_xhttp_mode(mode: str) -> str:
     return mode if mode and mode != "auto" else "stream-one"
 
 
-_XHTTP_CLIENT_EXTRA = {
+_XHTTP_CLIENT_EXTRA_BASE = {
     "xmux": {
         "cMaxReuseTimes": 0,
         "maxConcurrency": "16-32",
@@ -32,13 +32,16 @@ _XHTTP_CLIENT_EXTRA = {
         "hMaxRequestTimes": "600-900",
         "hMaxReusableSecs": "1800-3000",
     },
-    "noGRPCHeader": True,
     "xPaddingBytes": "100-1000",
 }
 
 
-def _xhttp_client_extra_json() -> str:
-    return json.dumps(_XHTTP_CLIENT_EXTRA, separators=(",", ":"))
+def _xhttp_client_extra(cdn: bool = False) -> dict:
+    return {**_XHTTP_CLIENT_EXTRA_BASE, "noGRPCHeader": not cdn}
+
+
+def _xhttp_client_extra_json(cdn: bool = False) -> str:
+    return json.dumps(_xhttp_client_extra(cdn), separators=(",", ":"))
 
 
 def generate_reality_url(
@@ -194,6 +197,7 @@ def build_mihomo_proxies(
     disabled: set[str],
     ws_path: str = "",
     vless_encryption: str = "none",
+    xhttp_cdn_mode: str = "auto",
 ) -> list[dict]:
     proxies: list[dict] = []
     enc = "" if vless_encryption in ("", "none") else vless_encryption
@@ -242,7 +246,6 @@ def build_mihomo_proxies(
                 "x-padding-bytes": "100-1000",
                 "reuse-settings": {
                     "max-concurrency": "16-32",
-                    "max-connections": 0,
                     "c-max-reuse-times": 0,
                     "h-max-request-times": "600-900",
                     "h-max-reusable-secs": "1800-3000",
@@ -268,13 +271,12 @@ def build_mihomo_proxies(
             "alpn": ["h2"],
             "xhttp-opts": {
                 "path": xhttp_path,
-                "mode": xhttp_mode or "auto",
+                "mode": xhttp_cdn_mode or "auto",
                 "host": domain,
-                "no-grpc-header": True,
+                "no-grpc-header": False,
                 "x-padding-bytes": "100-1000",
                 "reuse-settings": {
                     "max-concurrency": "16-32",
-                    "max-connections": 0,
                     "c-max-reuse-times": 0,
                     "h-max-request-times": "600-900",
                     "h-max-reusable-secs": "1800-3000",
@@ -332,8 +334,7 @@ def build_mihomo_proxies(
                     "x-padding-bytes": "100-1000",
                     "reuse-settings": {
                         "max-concurrency": "16-32",
-                        "max-connections": 0,
-                        "c-max-reuse-times": 0,
+                            "c-max-reuse-times": 0,
                         "h-max-request-times": "600-900",
                         "h-max-reusable-secs": "1800-3000",
                         "h-keep-alive-period": 15,
@@ -649,6 +650,7 @@ def build_user_sub_file(
     grpc_mode = get_conf_or_none("GRPC_MODE") or "gun"
     xhttp_path = get_conf_or_none("XHTTP_PATH") or ""
     xhttp_mode = get_conf_or_none("XHTTP_MODE") or "auto"
+    xhttp_cdn_mode = get_conf_or_none("XHTTP_CDN_MODE") or "auto"
     reality_port_str = get_conf_or_none("REALITY_PORT") or "443"
     reality_dest = get_conf_or_none("REALITY_DEST") or "microsoft.com:443"
     pub_key = get_conf_or_none("REALITY_PUBKEY") or ""
@@ -666,7 +668,8 @@ def build_user_sub_file(
     lines: list[str] = []
     disabled = get_disabled_protocols()
     enc = get_vless_encryption()
-    client_extra = _xhttp_client_extra_json()
+    client_extra_direct = _xhttp_client_extra_json(cdn=False)
+    client_extra_cdn = _xhttp_client_extra_json(cdn=True)
 
     # gRPC только через CDN
     if connect_host != domain and grpc_service and "grpc" not in disabled:
@@ -681,7 +684,7 @@ def build_user_sub_file(
         name_xhttp = users.get_config_name("XHTTP", label)
         lines.append(generate_xhttp_url(
             uuid_val, server_ip, 443, xhttp_path, domain, name_xhttp,
-            mode=xhttp_mode, extra_json=client_extra, vless_encryption=enc,
+            mode=xhttp_mode, extra_json=client_extra_direct, vless_encryption=enc,
         ))
 
     # XHTTP через CDN
@@ -689,7 +692,7 @@ def build_user_sub_file(
         name_xhttp_cdn = users.get_config_name("XHTTP-CDN", label)
         lines.append(generate_xhttp_url(
             uuid_val, connect_host, 443, xhttp_path, domain, name_xhttp_cdn,
-            mode=xhttp_mode, extra_json=client_extra, vless_encryption=enc,
+            mode=xhttp_cdn_mode, extra_json=client_extra_cdn, vless_encryption=enc,
         ))
 
     # WS только через CDN
@@ -711,7 +714,7 @@ def build_user_sub_file(
             uuid_val, server_ip, int(reality_port_str),
             short_id, dest_host, pub_key, name_reality,
             mode=reality_mode, xhttp_path=xhttp_path_reality,
-            xhttp_mode=xhttp_extra_mode, extra_json=client_extra if reality_mode == "xhttp" else None,
+            xhttp_mode=xhttp_extra_mode, extra_json=client_extra_direct if reality_mode == "xhttp" else None,
             vless_encryption=enc,
         ))
 
@@ -728,6 +731,7 @@ def build_user_sub_file(
         reality_port_str, reality_dest, pub_key, short_id,
         reality_mode, xhttp_path_reality, xhttp_extra_mode,
         disabled, ws_path=ws_path_conf, vless_encryption=get_vless_encryption(),
+        xhttp_cdn_mode=xhttp_cdn_mode,
     )
     write_sub_yaml(output_dir, label, token, proxies)
 

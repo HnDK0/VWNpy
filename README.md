@@ -55,11 +55,33 @@ WS и gRPC публикуются только при включённом CDN. 
 Encryption (по умолчанию для новых установок). `support-x25519mlkem768` у
 Reality остаётся отдельным PQ key exchange.
 
+### CDN и `noGRPCHeader`
+
+Для CDN XHTTP включается `noGRPCHeader=false`: Cloudflare пропускает
+`stream-one` только как gRPC. Для direct XHTTP и Reality-XHTTP остаётся
+`true`. Режимы direct/CDN настраиваются отдельно: `XHTTP_MODE` и
+`XHTTP_CDN_MODE`. `stream-one` через CF работает только при
+`noGRPCHeader=false` и включённом **Cloudflare Network → gRPC**. Если
+проблемы — используйте `auto`/`packet-up` для CDN.
+
 ## VLESS Encryption
 
 Новые установки включают VLESS Encryption (`mlkem768x25519plus`) по умолчанию.
-Для существующих установок: `vwn vless-enc on` (клиенты должны поддерживать
-VLESS Encryption и переимпортировать подписку). Отключить: `vwn vless-enc off`.
+Существующие установки получают её через `vwn rebuild`, если ключи ещё не
+настроены. `VLESS_DECRYPTION=none` считается явным отключением и не
+перезаписывается. Управление:
+
+```bash
+vwn vless-enc status
+vwn vless-enc on [--force-new-keys]
+vwn vless-enc off
+```
+
+`--force-new-keys` нужен только при потере `VLESS_ENCRYPTION`. Включение —
+жёсткий переход: все клиенты должны поддерживать VLESS Encryption и
+переимпортировать подписку. Откат: `vwn vless-enc off`, `vwn sub rebuild`,
+переимпорт. Если ядро не поддерживает `xray vlessenc`, сначала
+`vwn update-xray`.
 
 ## Переход с WebSocket на gRPC
 

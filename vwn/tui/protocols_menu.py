@@ -110,20 +110,25 @@ def manage_reality() -> None:
 
 def manage_grpc_xhttp() -> None:
     from vwn.modules.xray import (read_grpc_xhttp_info, update_grpc_service,
-                                   update_xhttp_path, update_domain,
-                                   update_stub_url, update_uuid_all,
-                                   set_xhttp_mode, set_grpc_mode, renew_ssl,
-                                   disable_grpc, enable_grpc,
-                                   disable_xhttp, enable_xhttp, check_cert)
+                                   update_xhttp_path, update_xhttp_cdn_mode,
+                                   update_domain, update_stub_url, update_uuid_all,
+                                   set_xhttp_mode, set_xhttp_cdn_mode, set_grpc_mode, renew_ssl,
+                                   disable_grpc, enable_grpc, disable_xhttp, enable_xhttp,
+                                   disable_ws, enable_ws, update_ws_path,
+                                   read_vless_encryption, enable_vless_encryption,
+                                   disable_vless_encryption, check_cert)
     from vwn.modules.sub import get_disabled_protocols
     while True:
         disabled = get_disabled_protocols()
         grpc_disabled = "grpc" in disabled
         xh_disabled = "xhttp" in disabled
+        ws_disabled = "ws" in disabled
         grpc = shell.service_active("xray-grpc.service") and not grpc_disabled
         xh = shell.service_active("xray-xhttp.service") and not xh_disabled
+        ws = shell.service_active("xray-ws.service") and not ws_disabled
         info = read_grpc_xhttp_info()
-        console.print(f"\n[bold]gRPC / XHTTP[/]")
+        ve = read_vless_encryption()
+        console.print(f"\n[bold]gRPC / XHTTP / WS[/]")
         if grpc_disabled:
             console.print(f"  gRPC:   [yellow]ОТКЛЮЧЁН[/]")
         else:
@@ -132,33 +137,53 @@ def manage_grpc_xhttp() -> None:
             console.print(f"  XHTTP:  [yellow]ОТКЛЮЧЁН[/]")
         else:
             console.print(f"  XHTTP:  {'[bright_green]РАБОТАЕТ[/]' if xh else '[red]ОСТАНОВЛЕН[/]'}")
+        if ws_disabled:
+            console.print(f"  WS:     [yellow]ОТКЛЮЧЁН[/]")
+        else:
+            console.print(f"  WS:     {'[bright_green]РАБОТАЕТ[/]' if ws else '[red]ОСТАНОВЛЕН[/]'}")
         console.print(f"  Домен:    {info['domain']}")
         console.print(f"  URL загл.: {info['stub_url']}")
         console.print(f"  gRPC:     {info['grpc_service']} (mode: {info['grpc_mode']})")
         console.print(f"  XHTTP:    {info['xhttp_path']} (mode: {info['xhttp_mode']})")
+        console.print(f"  XHTTP CDN: {info.get('xhttp_cdn_mode', 'auto')}")
+        console.print(f"  WS:       {info.get('ws_path', '')}")
+        console.print(f"  VE:       {'on' if ve['enabled'] else 'off'}")
         console.print(f"  UUID:     {info['uuid'][:12]}...")
         console.print("  1. Показать информацию (полная)")
         console.print("  2. Показать QR (gRPC)")
         console.print("  3. Показать QR (XHTTP)")
-        console.print("  4. Сменить serviceName gRPC")
-        console.print("  5. Сменить путь XHTTP")
-        console.print("  6. Сменить режим XHTTP (mode)")
-        console.print("  7. Сменить домен")
-        console.print("  8. Сменить URL заглушки (stub)")
-        console.print("  9. Сменить UUID (все протоколы)")
-        console.print(" 10. Обновить SSL сертификат")
-        console.print(" 11. Перезапустить сервисы")
-        console.print(" 12. Логи gRPC")
-        console.print(" 13. Логи XHTTP")
+        console.print("  4. Показать QR (XHTTP CDN)")
+        console.print("  5. Показать QR (WS)")
+        console.print("  6. Сменить serviceName gRPC")
+        console.print("  7. Сменить путь XHTTP")
+        console.print("  8. Сменить режим XHTTP (mode)")
+        console.print("  9. Сменить режим XHTTP CDN (mode)")
+        console.print(" 10. Сменить путь WS")
+        console.print(" 11. Сменить домен")
+        console.print(" 12. Сменить URL заглушки (stub)")
+        console.print(" 13. Сменить UUID (все протоколы)")
+        console.print(" 14. Обновить SSL сертификат")
+        console.print(" 15. Перезапустить сервисы")
+        console.print(" 16. Логи gRPC")
+        console.print(" 17. Логи XHTTP")
+        console.print(" 18. Логи WS")
         if grpc_disabled:
-            console.print(" 14. Включить gRPC")
+            console.print(" 19. Включить gRPC")
         else:
-            console.print(" 14. Отключить gRPC")
+            console.print(" 19. Отключить gRPC")
         if xh_disabled:
-            console.print(" 15. Включить XHTTP")
+            console.print(" 20. Включить XHTTP")
         else:
-            console.print(" 15. Отключить XHTTP")
-        console.print(" 16. Сменить режим gRPC (gun / multi)")
+            console.print(" 20. Отключить XHTTP")
+        if ws_disabled:
+            console.print(" 21. Включить WS")
+        else:
+            console.print(" 21. Отключить WS")
+        console.print(" 22. Сменить режим gRPC (gun / multi)")
+        if ve["enabled"]:
+            console.print(" 23. Отключить VLESS Encryption")
+        else:
+            console.print(" 23. Включить VLESS Encryption")
         console.print("  0. Назад")
         val = input("> ").strip()
         if val == "0":
@@ -170,20 +195,33 @@ def manage_grpc_xhttp() -> None:
         elif val == "3":
             run_cmd("vwn qr --type xhttp")
         elif val == "4":
+            run_cmd("vwn qr --type xhttp-cdn")
+        elif val == "5":
+            run_cmd("vwn qr --type ws")
+        elif val == "6":
             cur = info["grpc_service"]
             p = input(f"  Новый serviceName gRPC [{cur}]: ").strip()
             if p:
                 run_task("Смена serviceName gRPC", lambda: update_grpc_service(p))
-        elif val == "5":
+        elif val == "7":
             cur = info["xhttp_path"]
             p = input(f"  Новый XHTTP path [{cur}]: ").strip()
             if p:
                 run_task("Смена XHTTP path", lambda: update_xhttp_path(p))
-        elif val == "6":
+        elif val == "8":
             mode = ask_list("XHTTP mode", ["auto", "stream-one", "stream-up",
                                            "packet-up", "none"])
             run_task("Смена XHTTP mode", lambda: set_xhttp_mode(mode))
-        elif val == "7":
+        elif val == "9":
+            mode = ask_list("XHTTP CDN mode", ["auto", "stream-one", "stream-up",
+                                               "packet-up", "none"])
+            run_task("Смена XHTTP CDN mode", lambda: set_xhttp_cdn_mode(mode))
+        elif val == "10":
+            cur = info.get("ws_path", "")
+            p = input(f"  Новый WS path [{cur}]: ").strip()
+            if p:
+                run_task("Смена WS path", lambda: update_ws_path(p))
+        elif val == "11":
             cur = info["domain"]
             d = input(f"  Новый домен [{cur}]: ").strip()
             if d:
@@ -204,12 +242,12 @@ def manage_grpc_xhttp() -> None:
                         ck = input("  CF Key: ").strip()
                         if ce and ck:
                             run_task("SSL ACME CF", lambda: renew_ssl(d, "cf", ce, ck))
-        elif val == "8":
+        elif val == "12":
             cur = info["stub_url"]
             u = input(f"  Новый stub URL [{cur}]: ").strip()
             if u:
                 run_task("Смена stub URL", lambda: update_stub_url(u))
-        elif val == "9":
+        elif val == "13":
             from vwn.modules import users as _usr
             _usr.init_users_file()
             _ul = _usr.list_users()
@@ -230,7 +268,7 @@ def manage_grpc_xhttp() -> None:
                         _nu = _usr.rekey_user(_n)
                         if _nu:
                             console.print(f"  [bright_green]Новый UUID для {_ul[_n-1]['label']}: {_nu}[/]")
-        elif val == "10":
+        elif val == "14":
             domain = info["domain"] or config.vwn_conf_get("DOMAIN") or ""
             if not domain:
                 console.print("[red]Домен не задан[/]"); wait_key(); continue
@@ -263,25 +301,39 @@ def manage_grpc_xhttp() -> None:
                 ck = input("  CF Key: ").strip()
                 if ce and ck:
                     run_task("SSL ACME CF", lambda: renew_ssl(domain, "cf", ce, ck))
-        elif val == "11":
+        elif val == "15":
             restart_xray_services()
-        elif val == "12":
+        elif val == "16":
             run_cmd("journalctl -u xray-grpc -n 50 --no-pager")
-        elif val == "13":
+        elif val == "17":
             run_cmd("journalctl -u xray-xhttp -n 50 --no-pager")
-        elif val == "14":
+        elif val == "18":
+            run_cmd("journalctl -u xray-ws -n 50 --no-pager")
+        elif val == "19":
             if grpc_disabled:
                 run_task("Включение gRPC", enable_grpc)
             else:
                 if input("Отключить gRPC? (y/N): ").strip().lower() == "y":
                     run_task("Отключение gRPC", disable_grpc)
-        elif val == "15":
+        elif val == "20":
             if xh_disabled:
                 run_task("Включение XHTTP", enable_xhttp)
             else:
                 if input("Отключить XHTTP? (y/N): ").strip().lower() == "y":
                     run_task("Отключение XHTTP", disable_xhttp)
-        elif val == "16":
+        elif val == "21":
+            if ws_disabled:
+                run_task("Включение WS", enable_ws)
+            else:
+                if input("Отключить WS? (y/N): ").strip().lower() == "y":
+                    run_task("Отключение WS", disable_ws)
+        elif val == "22":
             mode = ask_list("gRPC mode", ["gun", "multi"])
             run_task("Смена gRPC mode", lambda: set_grpc_mode(mode))
+        elif val == "23":
+            if ve["enabled"]:
+                if input("Отключить VLESS Encryption? (y/N): ").strip().lower() == "y":
+                    run_task("Отключение VLESS Encryption", disable_vless_encryption)
+            else:
+                run_task("Включение VLESS Encryption", lambda: enable_vless_encryption(force_new_keys=True))
         wait_key()

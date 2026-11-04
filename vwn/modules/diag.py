@@ -71,6 +71,7 @@ def _cert_info() -> str:
 
 def _config_summary() -> str:
     from vwn.modules import users as _usr
+    from vwn.modules import xray
     _usr.init_users_file()
     users_list = _usr.list_users()
     users_info = f"{len(users_list)} user(s)"
@@ -80,7 +81,7 @@ def _config_summary() -> str:
         ("Domain", config.vwn_conf_get("DOMAIN") or "-"),
         ("Reality SNI (домен)", config.vwn_conf_get("REALITY_DEST") or "-"),
         ("Reality port", config.vwn_conf_get("REALITY_PORT") or "443"),
-        ("VLESS Encryption", config.vwn_conf_get("VLESS_ENCRYPTION") or "none"),
+        ("VLESS Encryption", "on" if (xray.read_vless_encryption()["enabled"]) else "off"),
         ("Users", users_info),
         ("Server IP", config.vwn_conf_get("SERVER_IP") or "-"),
     ]
@@ -216,7 +217,9 @@ def _diag_transports() -> None:
     if not svc:
         console.print(f"  gRPC (nginx→xray): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
     else:
+        pad = "X" * 500
         c = _code(["--http2", "-X", "POST", "-H", "content-type: application/grpc",
+                   "-H", "Referer: https://%s/?x_padding=%s" % (domain, pad),
                    "--data-binary", "", f"https://{domain}:{port}/{svc}/Tun"])
         console.print(f"  gRPC (nginx→xray): "
                       + (_ok(c) if c == "200" else _fail(c or "нет ответа", "ожидается 200")))
@@ -224,7 +227,9 @@ def _diag_transports() -> None:
         console.print(f"  gRPC (проба 404):  "
                       + (_ok(c) if c == "404" else _fail(c or "нет ответа", "ожидается 404")))
 
-    c = _code(["--http2", f"https://{domain}:{port}{xh}/"])
+    pad = "X" * 500
+    c = _code(["--http2", "-H", "Referer: https://%s/?x_padding=%s" % (domain, pad),
+               f"https://{domain}:{port}{xh}/"])
     bad = c in ("", "000", "502", "503", "504")
     console.print(f"  XHTTP (grpc_pass): "
                   + (_fail(c or "нет ответа", "upstream недоступен") if bad else _ok(c)))
