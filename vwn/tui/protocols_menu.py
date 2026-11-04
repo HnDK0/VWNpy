@@ -110,7 +110,7 @@ def manage_reality() -> None:
 
 def manage_grpc_xhttp() -> None:
     from vwn.modules.xray import (read_grpc_xhttp_info, update_grpc_service,
-                                   update_xhttp_path, update_xhttp_cdn_mode,
+                                   update_xhttp_path,
                                    update_domain, update_stub_url, update_uuid_all,
                                    set_xhttp_mode, set_xhttp_cdn_mode, set_grpc_mode, renew_ssl,
                                    disable_grpc, enable_grpc, disable_xhttp, enable_xhttp,
