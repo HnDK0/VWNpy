@@ -87,6 +87,9 @@ def qr(type):
     xhttp_path = vwn_cfg.vwn_conf_get("XHTTP_PATH")
     xhttp_mode = vwn_cfg.vwn_conf_get("XHTTP_MODE") or "auto"
     xhttp_cdn_mode = vwn_cfg.vwn_conf_get("XHTTP_CDN_MODE") or "auto"
+    from vwn.modules import xray as _xray
+    _ve = _xray.read_vless_encryption()
+    enc = _ve["encryption"] if _ve["enabled"] else "none"
     if not all([uuid, ip, domain]):
         click.echo("Конфиг не полный (запустите vwn install)", err=True)
         return
@@ -115,9 +118,9 @@ def qr(type):
         if connect_host == domain:
             click.echo("gRPC публикуется только через CDN (CDN не включён)", err=True)
             return
-        url = sub.generate_grpc_url(uuid, connect_host, 443, grpc_service, domain, get_config_name("gRPC", label), mode=grpc_mode)
+        url = sub.generate_grpc_url(uuid, connect_host, 443, grpc_service, domain, get_config_name("gRPC", label), mode=grpc_mode, vless_encryption=enc)
     elif type == "xhttp":
-        url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False))
+        url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False), vless_encryption=enc)
     elif type == "xhttp-cdn":
         from vwn.core import config as _c
         connect_host = domain
@@ -130,7 +133,7 @@ def qr(type):
         if connect_host == domain:
             click.echo("CDN не включён (connect_host == domain)", err=True)
             return
-        url = sub.generate_xhttp_url(uuid, connect_host, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP-CDN", label), mode=xhttp_cdn_mode or "auto", extra_json=sub._xhttp_client_extra_json(cdn=True))
+        url = sub.generate_xhttp_url(uuid, connect_host, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP-CDN", label), mode=xhttp_cdn_mode or "auto", extra_json=sub._xhttp_client_extra_json(cdn=True), vless_encryption=enc)
     elif type == "ws":
         ws_path = vwn_cfg.vwn_conf_get("WS_PATH")
         if not ws_path:
@@ -147,7 +150,7 @@ def qr(type):
         if connect_host == domain:
             click.echo("WS публикуется только через CDN (CDN не включён)", err=True)
             return
-        url = sub.generate_ws_url(uuid, connect_host, 443, ws_path, domain, get_config_name("WS", label))
+        url = sub.generate_ws_url(uuid, connect_host, 443, ws_path, domain, get_config_name("WS", label), vless_encryption=enc)
     else:
         click.echo(f"Неизвестный тип: {type}", err=True)
         return
@@ -189,12 +192,16 @@ def rebuild():
     from vwn.modules.xray import legacy_ws_present, rebuild_configs
     was_ws = legacy_ws_present()
     try:
-        rebuild_configs()
+        rebuild_configs(refresh_ip=True)
     except RuntimeError as exc:
         click.echo(f"Ошибка: {exc}", err=True)
         sys.exit(1)
     subprocess.run(["systemctl", "daemon-reload"], check=False)
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
     for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+        if svc in config.XRAY_SERVICES and svc.removeprefix("xray-") in disabled:
+            continue
         subprocess.run(["systemctl", "restart", svc], check=False)
     click.echo("Конфиги пересобраны." + (" Переход WS → gRPC выполнен; "
                "новые ссылки — в подписках (старые WS-ссылки перестали работать)."
@@ -210,7 +217,7 @@ def sub():
 def sub_rebuild():
     """Пересобрать подписки из vwn.conf."""
     from vwn.modules.sub import rebuild_all_sub_files, SUB_DIR
-    count = rebuild_all_sub_files()
+    count = rebuild_all_sub_files(refresh_ip=True)
     click.echo(f"Подписки пересобраны: {count} пользователей в {SUB_DIR}")
 
 
@@ -374,6 +381,8 @@ def vless_enc_status():
     from vwn.modules import xray
     info = xray.read_vless_encryption()
     click.echo("VLESS Encryption: %s" % ("on" if info["enabled"] else "off"))
+    click.echo("  XHTTP/gRPC/WS: %s" % ("on" if info["enabled"] else "off"))
+    click.echo("  Reality:       none")
     if info["enabled"]:
         click.echo("  decryption: %s" % info["decryption"][:24] + "...")
         click.echo("  encryption: %s" % info["encryption"][:24] + "...")

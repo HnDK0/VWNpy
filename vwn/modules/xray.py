@@ -189,7 +189,7 @@ def reality_config(uuid: str, server_name: str,
     """Reality на 443 публично (self-steal).
 
     server_name — собственный домен (DOMAIN): он же в сертификате nginx.
-    Не прошедшие Reality-аутентификацию уходят на dest = nginx на
+    Не прошедшие Reality-аутентификацию уходят на target = nginx на
     localhost:fallback_port (xver=0: nginx не ждёт PROXY protocol).
     """
     return {
@@ -202,7 +202,6 @@ def reality_config(uuid: str, server_name: str,
             "settings": {
                 "clients": [{
                     "id": uuid, "flow": "xtls-rprx-vision", "email": "default",
-                "minClientVer": "", "maxClientVer": "",
                 }],
                 "decryption": decryption,
             },
@@ -211,10 +210,13 @@ def reality_config(uuid: str, server_name: str,
                 "security": "reality",
                 "realitySettings": {
                     "show": False,
-                    "dest": f"127.0.0.1:{fallback_port}",
+                    "target": f"127.0.0.1:{fallback_port}",
                     "xver": 0,
                     "serverNames": [server_name],
                     "privateKey": private_key,
+                    "minClientVer": "",
+                    "maxClientVer": "",
+                    "maxTimeDiff": 0,
                     "shortIds": [short_id],
                 },
                 "sockopt": _sockopt(public=True),
@@ -347,13 +349,16 @@ def _read_json(path: str) -> dict | None:
 
 
 def read_reality_info(path: str | None = None) -> dict | None:
-    cfg = _read_json(path or os.path.join(config.XRAY_DIR, "xray-reality.json"))
+    p = path or os.path.join(config.XRAY_DIR, "xray-reality.json")
+    cfg = _read_json(p)
+    if cfg is None:
+        cfg = _read_json(p + ".disabled")
     if cfg is None:
         return None
     ib = cfg.get("inbounds", [{}])[0]
     ss = ib.get("streamSettings", {})
     rs = ss.get("realitySettings", {})
-    mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
+    mode = ss.get("network") or config.vwn_conf_get("REALITY_MODE") or "tcp"
     info = {
         "port": ib.get("port"),
         "sni": (rs.get("serverNames") or [""])[0],
@@ -364,7 +369,8 @@ def read_reality_info(path: str | None = None) -> dict | None:
         "mode": mode,
     }
     if mode == "xhttp":
-        info["xhttp_path"] = config.vwn_conf_get("REALITY_XHTTP_PATH") or ""
+        xs = ss.get("xhttpSettings", {})
+        info["xhttp_path"] = xs.get("path") or config.vwn_conf_get("REALITY_XHTTP_PATH") or ""
         info["xhttp_mode"] = config.vwn_conf_get("REALITY_XHTTP_MODE") or "auto"
     return info
 
@@ -397,6 +403,36 @@ def update_reality_sni(dest: str) -> None:
     )
 
 
+def _ensure_reality_fields(ib: dict) -> None:
+    ss = ib.setdefault("streamSettings", {})
+    ss["security"] = "reality"
+    rs = ss.setdefault("realitySettings", {})
+    rs.setdefault("show", False)
+    if "target" not in rs:
+        if "dest" in rs:
+            rs["target"] = rs.pop("dest")
+        else:
+            rs["target"] = f"127.0.0.1:{config.NGINX_LOOPBACK_PORT}"
+    else:
+        rs.pop("dest", None)
+    rs.setdefault("xver", 0)
+    rs.setdefault("minClientVer", "")
+    rs.setdefault("maxClientVer", "")
+    if "maxTimeDiff" not in rs and "maxTimediff" in rs:
+        rs["maxTimeDiff"] = rs.pop("maxTimediff")
+    rs.setdefault("maxTimeDiff", 0)
+    domain = config.vwn_conf_get("DOMAIN") or ""
+    if domain and not rs.get("serverNames"):
+        rs["serverNames"] = [domain]
+    if not rs.get("privateKey"):
+        raise RuntimeError("Reality privateKey отсутствует — нужен vwn rebuild")
+    if not rs.get("shortIds"):
+        sid = config.vwn_conf_get("SHORT_ID")
+        if sid:
+            rs["shortIds"] = [sid]
+    ib.setdefault("settings", {})["decryption"] = "none"
+
+
 def set_reality_mode(mode: str, xhttp_path: str | None = None,
                      xhttp_mode: str | None = None,
                      restart: bool = True) -> None:
@@ -404,8 +440,11 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
     cfg = _read_json(path)
     if cfg is None:
         raise RuntimeError("Reality не установлен")
+    old = json.loads(json.dumps(cfg))
     ib = cfg["inbounds"][0]
-    ss = ib.setdefault("streamSettings", {})
+    _ensure_reality_fields(ib)
+    ss = ib["streamSettings"]
+    p = xm = ""
     if mode == "xhttp":
         p = xhttp_path or config.vwn_conf_get("REALITY_XHTTP_PATH")
         if not p or p == "/r":
@@ -416,17 +455,28 @@ def set_reality_mode(mode: str, xhttp_path: str | None = None,
         ss["sockopt"] = _sockopt(public=True)
         for c in ib.get("settings", {}).get("clients", []):
             c.pop("flow", None)
-        config.vwn_conf_set("REALITY_MODE", "xhttp")
-        config.vwn_conf_set("REALITY_XHTTP_PATH", p)
-        config.vwn_conf_set("REALITY_XHTTP_MODE", xm)
     else:
         ss["network"] = "tcp"
         ss.pop("xhttpSettings", None)
         ss["sockopt"] = _sockopt(public=True)
         for c in ib.get("settings", {}).get("clients", []):
             c["flow"] = "xtls-rprx-vision"
-        config.vwn_conf_set("REALITY_MODE", "tcp")
+
     _write_json(path, cfg)
+    if os.path.isfile(config.XRAY_BIN):
+        r = shell.run([config.XRAY_BIN, "-test", "-config", path],
+                      capture=True, check=False, timeout=15)
+        if r is not None and r.returncode != 0:
+            _write_json(path, old)
+            raise RuntimeError(
+                "Xray config invalid: xray-reality.json\n%s"
+                % ((r.stdout or r.stderr or "").strip()[-500:])
+            )
+
+    config.vwn_conf_set("REALITY_MODE", "xhttp" if mode == "xhttp" else "tcp")
+    if mode == "xhttp":
+        config.vwn_conf_set("REALITY_XHTTP_PATH", p)
+        config.vwn_conf_set("REALITY_XHTTP_MODE", xm)
     if restart:
         shell.run(["systemctl", "restart", "xray-reality"], check=False)
 
@@ -519,24 +569,74 @@ def migrate_ws_to_grpc() -> bool:
     return True
 
 
+def _restart_nginx_checked() -> None:
+    r = shell.run(["nginx", "-t"], capture=True, check=False, timeout=15)
+    if r is not None and r.returncode != 0:
+        raise RuntimeError("nginx config invalid: %s"
+                           % ((r.stdout or r.stderr or "").strip()[-500:]))
+    shell.run(["systemctl", "enable", "nginx"], check=False)
+    shell.run(["systemctl", "restart", "nginx"], check=False)
+
+
+def _read_nginx_conf() -> "str | None":
+    try:
+        with open(config.NGINX_LOOPBACK_CONF, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _restore_nginx_conf(old: "str | None") -> None:
+    if old is None:
+        return
+    try:
+        with open(config.NGINX_LOOPBACK_CONF, "w", encoding="utf-8") as fh:
+            fh.write(old)
+        shell.run(["systemctl", "restart", "nginx"], check=False)
+    except OSError:
+        pass
+
+
 def disable_reality() -> None:
-    shell.run(["systemctl", "stop", "xray-reality"], check=False)
-    shell.run(["systemctl", "disable", "xray-reality"], check=False)
+    old_conf = _read_nginx_conf()
     p = os.path.join(config.XRAY_DIR, "xray-reality.json")
-    if os.path.isfile(p):
-        os.rename(p, p + ".disabled")
-    _add_disabled("reality")
+    renamed = False
+    try:
+        shell.run(["systemctl", "stop", "xray-reality"], check=False)
+        shell.run(["systemctl", "disable", "xray-reality"], check=False)
+        if os.path.isfile(p):
+            os.rename(p, p + ".disabled")
+            renamed = True
+        _add_disabled("reality")
+        _re_render_nginx()
+        _restart_nginx_checked()
+    except Exception:
+        if renamed and os.path.isfile(p + ".disabled"):
+            os.rename(p + ".disabled", p)
+        _del_disabled("reality")
+        _restore_nginx_conf(old_conf)
+        shell.run(["systemctl", "enable", "xray-reality"], check=False)
+        shell.run(["systemctl", "start", "xray-reality"], check=False)
+        raise
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
 
 
 def enable_reality() -> None:
+    old_conf = _read_nginx_conf()
+    try:
+        _del_disabled("reality")
+        _re_render_nginx()
+        _restart_nginx_checked()
+    except Exception:
+        _add_disabled("reality")
+        _restore_nginx_conf(old_conf)
+        raise
     p = os.path.join(config.XRAY_DIR, "xray-reality.json.disabled")
     if os.path.isfile(p):
         os.rename(p, p.removesuffix(".disabled"))
     shell.run(["systemctl", "enable", "xray-reality"], check=False)
     shell.run(["systemctl", "start", "xray-reality"], check=False)
-    _del_disabled("reality")
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
 
@@ -673,6 +773,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
         decryption = "none"
     else:
         decryption = resolve_vless_policy(force=(vless_encryption is True))
+    reality_decryption = "none"
     if reality_mode is None:
         if (config.vwn_conf_get("REALITY_MODE")
                 or os.path.isfile(os.path.join(config.XRAY_DIR, "xray-reality.json"))
@@ -683,7 +784,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
 
     write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
                           uuid_, sname, priv, short_id,
-                          port=reality_port, decryption=decryption)
+                          port=reality_port, decryption=reality_decryption)
     write_grpc_config(os.path.join(config.XRAY_DIR, "grpc.json"),
                        uuid_, config.XRAY_GRPC_PORT, grpc_service,
                        decryption=decryption)
@@ -715,6 +816,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
                    "}")
     write_nginx_loopback_config(
         tpl, config.NGINX_LOOPBACK_CONF,
+        NGINX_BIND="127.0.0.1",
         NGINX_LOOPBACK_PORT=config.NGINX_LOOPBACK_PORT, DOMAIN=domain, STUB=stub,
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
         WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
@@ -759,7 +861,7 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
     }
 
 
-def rebuild_configs() -> None:
+def rebuild_configs(refresh_ip: bool = False) -> None:
     """Пересобрать все конфиги Xray из сохранённых параметров vwn.conf.
 
     Перезаписывает JSON-конфиги текущими шаблонами (подхватывая новые
@@ -769,8 +871,12 @@ def rebuild_configs() -> None:
     Для уже установленных серверов это же миграция на self-steal: SNI Reality
     заменяется на DOMAIN. После пересборки нужен restart xray-reality.
     """
+    from vwn.modules.sub import get_disabled_protocols
+    reality_disabled = "reality" in get_disabled_protocols()
+
     # Сначала политика VLESS Encryption (fail-fast, до миграции и записи)
     decryption = resolve_vless_policy()
+    reality_decryption = "none"
 
     # установки до перехода на gRPC: WS_PATH/xray-ws/config.json → gRPC
     had_legacy = migrate_ws_to_grpc()
@@ -796,10 +902,10 @@ def rebuild_configs() -> None:
         raise RuntimeError("Конфиг неполный — сначала выполните vwn install")
 
     reality_path = os.path.join(config.XRAY_DIR, "xray-reality.json")
-    reality_disabled = reality_path + ".disabled"
+    reality_disabled_path = reality_path + ".disabled"
     r_cfg = _read_json(reality_path)
     if r_cfg is None:
-        r_cfg = _read_json(reality_disabled)
+        r_cfg = _read_json(reality_disabled_path)
     if r_cfg is None:
         raise RuntimeError("xray-reality.json не найден — невозможно пересобрать")
     private_key = (r_cfg.get("inbounds", [{}])[0]
@@ -814,10 +920,12 @@ def rebuild_configs() -> None:
     server_name = domain
     config.vwn_conf_set("REALITY_DEST", f"{domain}:443")
     config.vwn_conf_set("XHTTP_PATH", xhttp_path)
-    write_reality_config(os.path.join(config.XRAY_DIR, "xray-reality.json"),
-                          uuid_, server_name,
+    reality_path = os.path.join(config.XRAY_DIR, "xray-reality.json")
+    if reality_disabled and os.path.isfile(reality_path):
+        os.remove(reality_path)
+    write_reality_config(reality_path, uuid_, server_name,
                           private_key, short_id, port=reality_port,
-                          decryption=decryption)
+                          decryption=reality_decryption)
 
     reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
     if reality_mode != "tcp":
@@ -869,9 +977,11 @@ def rebuild_configs() -> None:
 
     from vwn.modules.users import apply_users_to_configs
     apply_users_to_configs()
+    if reality_disabled:
+        os.replace(reality_path, reality_path + ".disabled")
     _re_render_nginx()
     from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    rebuild_all_sub_files(refresh_ip=refresh_ip)
 
     from vwn.modules.warp import reapply_warp
     reapply_warp()
@@ -922,9 +1032,14 @@ def _re_render_nginx(**overrides) -> None:
         system._write_nginx_main_conf()
     except OSError:
         pass
+    from vwn.modules.sub import get_disabled_protocols
+    public = "reality" in get_disabled_protocols()
+    bind = "0.0.0.0" if public else "127.0.0.1"
+    nginx_port = 443 if public else config.NGINX_LOOPBACK_PORT
     write_nginx_loopback_config(
         tpl, config.NGINX_LOOPBACK_CONF,
-        NGINX_LOOPBACK_PORT=config.NGINX_LOOPBACK_PORT, DOMAIN=domain, STUB=stub,
+        NGINX_BIND=bind,
+        NGINX_LOOPBACK_PORT=nginx_port, DOMAIN=domain, STUB=stub,
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
         WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
         WS_MAP=ws_map, WS_LOCATION=ws_location,
@@ -1249,7 +1364,7 @@ def resolve_vless_policy(force_new_keys: bool = False,
 
 def enable_vless_encryption(force_new_keys: bool = False) -> None:
     print("  Внимание: старые клиенты без поддержки VLESS Encryption перестанут работать")
-    resolve_vless_policy(force_new_keys=force_new_keys)
+    resolve_vless_policy(force=True, force_new_keys=force_new_keys)
     # rewrite configs with decryption
     rebuild_configs()
     from vwn.modules.sub import rebuild_all_sub_files

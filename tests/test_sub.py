@@ -310,3 +310,43 @@ def test_write_sub_yaml_creates_file(tmp_path):
 def test_sub_yaml_filename_matches_nginx_regex():
     name = f"{sub.safe_label('Hello World')}_{sub.generate_token()}.yaml"
     assert re.fullmatch(r"/sub/[A-Za-z0-9_-]+_[A-Za-z0-9]+\.yaml", "/sub/" + name)
+
+
+def test_html_ws_host_has_no_fragment(conf, tmp_path):
+    url = sub.generate_ws_url(
+        "uuid-1", "1.2.3.4", 443, "/ws", "vpn.example.com",
+        "WS user", vless_encryption="none",
+    )
+    tpl = os.path.join(os.path.dirname(sub.__file__), "..", "data", "user_page.html")
+    out = tmp_path / "page.html"
+    sub.build_user_html_page(
+        tpl, str(out), "uuid-1", "user", "https://vpn.example.com/sub/x.txt",
+        [url], domain="vpn.example.com", server_ip="1.2.3.4",
+    )
+    html = out.read_text(encoding="utf-8")
+    m = re.search(r'<div class="cfg-host">(.*?)</div>', html, re.S)
+    assert m is not None
+    assert m.group(1) == "vpn.example.com"
+    assert "#%F0" not in m.group(1)
+
+
+def test_rebuild_all_sub_files_refreshes_ip_and_flag(conf, tmp_path, monkeypatch):
+    from vwn.core import system
+    from vwn.modules import users
+
+    users._VWN_FLAG_CACHE = None
+    config.vwn_conf_set("SERVER_IP", "1.1.1.1")
+    monkeypatch.setattr(system, "get_server_ip", lambda: "2.2.2.2")
+    monkeypatch.setattr(users, "get_country_flag", lambda ip: f"flag:{ip}")
+    users_file = tmp_path / "users.conf"
+    users_file.write_text("uuid-1|user|token\n", encoding="utf-8")
+    monkeypatch.setattr(users, "USERS_FILE", str(users_file))
+    monkeypatch.setattr(sub, "build_user_sub_file", lambda *a, **k: None)
+
+    count = sub.rebuild_all_sub_files(
+        output_dir=str(tmp_path / "sub"), refresh_ip=True,
+    )
+    assert count == 1
+    assert config.vwn_conf_get("SERVER_IP") == "2.2.2.2"
+    assert users.get_cached_flag() == "flag:2.2.2.2"
+    users._VWN_FLAG_CACHE = None

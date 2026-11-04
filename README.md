@@ -30,7 +30,7 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 
 ```
 Порт 443
-  └─ Xray Reality (self-steal: SNI = домен, dest = nginx 127.0.0.1:8443)
+  └─ Xray Reality (self-steal: SNI = домен, target = nginx 127.0.0.1:8443)
        ├─ прошедшие Reality (Vision) → xray-reality (VLESS)
        └─ остальное → nginx 127.0.0.1:8443 (настоящий сертификат домена)
             ├─ /sub/*            — подписки
@@ -52,8 +52,8 @@ SSL-сертификата.
 По умолчанию без CDN публикуется только XHTTP (прямой) и Reality-XHTTP.
 WS и gRPC публикуются только при включённом CDN. CDN терминирует TLS и видит
 внешний VLESS-поток, поэтому для скрытия содержимого включайте VLESS
-Encryption (по умолчанию для новых установок). `support-x25519mlkem768` у
-Reality остаётся отдельным PQ key exchange.
+Encryption (по умолчанию для XHTTP/gRPC/WS; Reality остаётся `none`).
+`support-x25519mlkem768` у Reality остаётся отдельным PQ key exchange.
 
 ### CDN и `noGRPCHeader`
 
@@ -66,8 +66,11 @@ Reality остаётся отдельным PQ key exchange.
 
 ## VLESS Encryption
 
-Новые установки включают VLESS Encryption (`mlkem768x25519plus`) по умолчанию.
-Существующие установки получают её через `vwn rebuild`, если ключи ещё не
+VLESS Encryption (`mlkem768x25519plus`) включена по умолчанию для
+**XHTTP, gRPC и WS**. Для Reality она остаётся `none`: Reality уже даёт
+TLS 1.3, и так же поступает X-Panel.
+
+Существующие установки получают VE через `vwn rebuild`, если ключи ещё не
 настроены. `VLESS_DECRYPTION=none` считается явным отключением и не
 перезаписывается. Управление:
 
@@ -77,11 +80,26 @@ vwn vless-enc on [--force-new-keys]
 vwn vless-enc off
 ```
 
-`--force-new-keys` нужен только при потере `VLESS_ENCRYPTION`. Включение —
-жёсткий переход: все клиенты должны поддерживать VLESS Encryption и
-переимпортировать подписку. Откат: `vwn vless-enc off`, `vwn sub rebuild`,
-переимпорт. Если ядро не поддерживает `xray vlessenc`, сначала
-`vwn update-xray`.
+`vwn vless-enc status` показывает раздельно: `XHTTP/gRPC/WS: on`,
+`Reality: none`. `--force-new-keys` нужен только при потере
+`VLESS_ENCRYPTION`. Включение — жёсткий переход для XHTTP/gRPC/WS: клиенты
+должны поддерживать VE и переимпортировать подписку. Откат:
+`vwn vless-enc off`, `vwn sub rebuild`, переимпорт. Если ядро не
+поддерживает `xray vlessenc`, сначала `vwn update-xray`.
+
+## Выключение Reality
+
+Reality — публичный вход на 443. При выключении `vwn` переводит nginx с
+`127.0.0.1:8443` на `0.0.0.0:443`, поэтому XHTTP/gRPC/WS и подписки
+продолжают работать, а Reality-ссылка исчезает. При включении nginx
+возвращается на loopback, а Xray Reality снова занимает 443.
+
+```bash
+vwn menu   # Reality → Отключить / Включить
+```
+
+Если nginx не может занять 443, операция завершится ошибкой проверки
+`nginx -t`; сначала освободите порт.
 
 ## Переход с WebSocket на gRPC
 

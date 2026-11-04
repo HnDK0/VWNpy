@@ -324,7 +324,7 @@ def build_mihomo_proxies(
                     "support-x25519mlkem768": True,
                 },
                 "network": "xhttp",
-                "encryption": enc,
+                "encryption": "",
                 "alpn": ["h2"],
                 "xhttp-opts": {
                     "path": xhttp_path_reality or "/r",
@@ -350,7 +350,7 @@ def build_mihomo_proxies(
                 "uuid": uuid_val,
                 "udp": True,
                 "flow": "xtls-rprx-vision",
-                "encryption": enc if enc else "",
+                "encryption": "",
                 "tls": True,
                 "servername": dest_host,
                 "client-fingerprint": "chrome",
@@ -501,14 +501,14 @@ def build_user_html_page(
         elif "type=xhttp" in line:
             cfg_type = "xhttp"
             proto_label = "XHTTP"
-            m = re.search(r"host=([^&]+)", line)
+            m = re.search(r"host=([^&#]+)", line)
             host_disp = m.group(1) if m else (domain or "")
             sm = re.search(r"vless://[^@]+@([^:]+)", line)
             cfg_cdn_ip = cdn_ip if (sm and sm.group(1) == connect_host and cdn_ip) else ""
         elif "type=ws" in line:
             cfg_type = "ws"
             proto_label = "WS + TLS"
-            m = re.search(r"host=([^&]+)", line)
+            m = re.search(r"host=([^&#]+)", line)
             host_disp = m.group(1) if m else (domain or "")
             sm = re.search(r"vless://[^@]+@([^:]+)", line)
             cfg_cdn_ip = cdn_ip if (sm and sm.group(1) == connect_host and cdn_ip) else ""
@@ -715,7 +715,7 @@ def build_user_sub_file(
             short_id, dest_host, pub_key, name_reality,
             mode=reality_mode, xhttp_path=xhttp_path_reality,
             xhttp_mode=xhttp_extra_mode, extra_json=client_extra_direct if reality_mode == "xhttp" else None,
-            vless_encryption=enc,
+            vless_encryption="none",
         ))
 
     write_sub_file(output_dir, label, token, lines)
@@ -761,6 +761,7 @@ def write_sub_map(conf_dir: str, country: str = "RU") -> str:
         f'    default                                                "{country} VLESS";\n'
         "}\n"
     )
+    os.makedirs(conf_dir, exist_ok=True)
     path = os.path.join(conf_dir, "sub_map.conf")
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -771,13 +772,25 @@ def write_sub_map(conf_dir: str, country: str = "RU") -> str:
 def rebuild_all_sub_files(
     output_dir: str = SUB_DIR,
     template_dir: "str | None" = None,
+    refresh_ip: bool = False,
 ) -> int:
     """Пересобрать подписки для всех пользователей из users.conf.
 
+    При refresh_ip=True заново определяет внешний IP и флаг страны.
     Возвращает количество обработанных пользователей.
     """
     domain = get_conf_or_none("DOMAIN")
     server_ip = get_conf_or_none("SERVER_IP")
+    if refresh_ip:
+        try:
+            from vwn.core import system
+            current = system.get_server_ip()
+            if current and current != "UNKNOWN" and current != server_ip:
+                config.vwn_conf_set("SERVER_IP", current)
+                server_ip = current
+        except Exception:
+            pass
+        users.get_cached_flag(force_refresh=True)
     if not domain or not server_ip:
         return 0
 

@@ -34,12 +34,15 @@ def test_reality_config_shape(monkeypatch):
     assert ib["port"] == 443
     assert ib["streamSettings"]["security"] == "reality"
     assert ib["streamSettings"]["realitySettings"]["privateKey"] == "PRIV"
-    # Fallback dest → nginx loopback
-    assert ib["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"
+    # Fallback target → nginx loopback
+    assert ib["streamSettings"]["realitySettings"]["target"] == "127.0.0.1:8443"
     assert ib["streamSettings"]["realitySettings"]["serverNames"] == ["vpn.example.com"]
-    # min/max client ver очищены (любая версия клиента)
-    assert ib["settings"]["clients"][0].get("minClientVer") == ""
-    assert ib["settings"]["clients"][0].get("maxClientVer") == ""
+    # min/max client ver и maxTimeDiff — в realitySettings, не в клиентах
+    rs = ib["streamSettings"]["realitySettings"]
+    assert rs["minClientVer"] == ""
+    assert rs["maxClientVer"] == ""
+    assert rs["maxTimeDiff"] == 0
+    assert "minClientVer" not in ib["settings"]["clients"][0]
     assert c["outbounds"][-1]["protocol"] == "blackhole"   # общие outbounds
     tags = [o["tag"] for o in c["outbounds"]]
     assert "dns-out" in tags
@@ -94,8 +97,8 @@ def test_provision_writes_valid_configs(paths):
     assert rc["inbounds"][0]["port"] == 443
     # self-steal: serverNames = домен сервера, а не внешний камуфляж
     assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["serverNames"] == ["vpn.example.com"]
-    # Fallback dest → nginx loopback (не-Reality трафик)
-    assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["dest"] == "127.0.0.1:8443"
+    # Fallback target → nginx loopback (не-Reality трафик)
+    assert rc["inbounds"][0]["streamSettings"]["realitySettings"]["target"] == "127.0.0.1:8443"
 
     gc = json.loads((paths / "xray" / "grpc.json").read_text(encoding="utf-8"))
     assert gc["inbounds"][0]["port"] == 50001
@@ -399,6 +402,159 @@ def test_migrate_ws_to_grpc(paths, monkeypatch):
     svc = config.vwn_conf_get("GRPC_SERVICE")
     assert svc and svc.startswith("svc")
     assert config.vwn_conf_get("WS_PATH") is None
+
+
+def test_vless_encryption_reality_none_others_on(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV", vless_encryption=True,
+    )
+    dec = config.vwn_conf_get("VLESS_DECRYPTION")
+    assert dec and dec != "none"
+    for name in ("grpc.json", "xhttp.json", "ws.json"):
+        cfg = json.loads((paths / "xray" / name).read_text(encoding="utf-8"))
+        assert cfg["inbounds"][0]["settings"]["decryption"] == dec
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    assert rc["inbounds"][0]["settings"]["decryption"] == "none"
+
+
+def test_enable_vless_encryption_from_off(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "rebuild_configs", lambda *a, **k: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV", vless_encryption=False,
+    )
+    assert xray.read_vless_encryption()["enabled"] is False
+    xray.enable_vless_encryption()
+    assert xray.read_vless_encryption()["enabled"] is True
+
+
+def test_set_reality_mode_restores_security_and_fields(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    p = paths / "xray" / "xray-reality.json"
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    cfg["inbounds"][0]["streamSettings"].pop("security", None)
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+
+    xray.set_reality_mode("xhttp", xhttp_mode="auto", restart=False)
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    ss = cfg["inbounds"][0]["streamSettings"]
+    assert ss["security"] == "reality"
+    assert ss["realitySettings"]["target"] == "127.0.0.1:8443"
+    assert ss["realitySettings"]["privateKey"] == "PRIV"
+    assert ss["network"] == "xhttp"
+    assert cfg["inbounds"][0]["settings"]["decryption"] == "none"
+
+
+def test_set_reality_mode_fails_without_private_key(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    p = paths / "xray" / "xray-reality.json"
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    cfg["inbounds"][0]["streamSettings"].pop("realitySettings", None)
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        xray.set_reality_mode("tcp", restart=False)
+
+
+def test_disable_enable_reality_moves_nginx(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+
+    xray.disable_reality()
+    assert not (paths / "xray" / "xray-reality.json").exists()
+    assert (paths / "xray" / "xray-reality.json.disabled").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 0.0.0.0:443 ssl" in ng
+
+    xray.enable_reality()
+    assert (paths / "xray" / "xray-reality.json").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 127.0.0.1:8443 ssl" in ng
+
+
+def test_disable_reality_rolls_back_on_nginx_failure(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    from vwn.modules.sub import get_disabled_protocols
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    monkeypatch.setattr(xray, "_restart_nginx_checked",
+                        lambda: (_ for _ in ()).throw(RuntimeError("nginx")))
+    with pytest.raises(RuntimeError):
+        xray.disable_reality()
+    assert (paths / "xray" / "xray-reality.json").exists()
+    assert "reality" not in get_disabled_protocols()
+
+
+def test_apply_users_skips_disabled_reality(paths, monkeypatch):
+    import vwn.modules.users as users
+    monkeypatch.setattr(users, "USERS_FILE", str(paths / "users.conf"))
+    (paths / "users.conf").write_text("u1|one|t1\n", encoding="utf-8")
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("DISABLED_PROTOCOLS", "reality")
+    calls = []
+    monkeypatch.setattr(users.shell, "run", lambda cmd, *a, **k: calls.append(list(cmd)))
+    users.apply_users_to_configs()
+    assert not any("xray-reality" in " ".join(c) for c in calls)
+
+
+def test_rebuild_disabled_reality_keeps_users(paths, monkeypatch):
+    import vwn.modules.users as users
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(users, "USERS_FILE", str(paths / "users.conf"))
+    (paths / "users.conf").write_text("u1|one|t1\nu2|two|t2\n", encoding="utf-8")
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    xray.disable_reality()
+    xray.rebuild_configs()
+
+    cfg = json.loads((paths / "xray" / "xray-reality.json.disabled").read_text(encoding="utf-8"))
+    ids = [c["id"] for c in cfg["inbounds"][0]["settings"]["clients"]]
+    assert ids == ["u1", "u2"]
+
+
+def test_rebuild_respects_disabled_reality(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    xray.disable_reality()
+    xray.rebuild_configs()
+
+    assert not (paths / "xray" / "xray-reality.json").exists()
+    assert (paths / "xray" / "xray-reality.json.disabled").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 0.0.0.0:443 ssl" in ng
     assert not (xd / "config.json").exists()
     assert not (sd / "xray-ws.service").exists()
     assert not (sd / "xray-ws.service.d").exists()
@@ -443,3 +599,156 @@ def test_rebuild_migrates_ws_install(paths, monkeypatch):
     assert f"location ^~ /{svc} {{" in ng
     assert "oldws" not in ng and "Upgrade" not in ng
     assert config.vwn_conf_get("WS_PATH") is None
+
+
+def test_vless_encryption_reality_none_others_on(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV", vless_encryption=True,
+    )
+    dec = config.vwn_conf_get("VLESS_DECRYPTION")
+    assert dec and dec != "none"
+    for name in ("grpc.json", "xhttp.json", "ws.json"):
+        cfg = json.loads((paths / "xray" / name).read_text(encoding="utf-8"))
+        assert cfg["inbounds"][0]["settings"]["decryption"] == dec
+    rc = json.loads((paths / "xray" / "xray-reality.json").read_text(encoding="utf-8"))
+    assert rc["inbounds"][0]["settings"]["decryption"] == "none"
+
+
+def test_enable_vless_encryption_from_off(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "rebuild_configs", lambda *a, **k: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV", vless_encryption=False,
+    )
+    assert xray.read_vless_encryption()["enabled"] is False
+    xray.enable_vless_encryption()
+    assert xray.read_vless_encryption()["enabled"] is True
+
+
+def test_set_reality_mode_restores_security_and_fields(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    p = paths / "xray" / "xray-reality.json"
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    cfg["inbounds"][0]["streamSettings"].pop("security", None)
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+
+    xray.set_reality_mode("xhttp", xhttp_mode="auto", restart=False)
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    ss = cfg["inbounds"][0]["streamSettings"]
+    assert ss["security"] == "reality"
+    assert ss["realitySettings"]["target"] == "127.0.0.1:8443"
+    assert ss["realitySettings"]["privateKey"] == "PRIV"
+    assert ss["network"] == "xhttp"
+    assert cfg["inbounds"][0]["settings"]["decryption"] == "none"
+
+
+def test_set_reality_mode_fails_without_private_key(paths):
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    p = paths / "xray" / "xray-reality.json"
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    cfg["inbounds"][0]["streamSettings"].pop("realitySettings", None)
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        xray.set_reality_mode("tcp", restart=False)
+
+
+def test_disable_enable_reality_moves_nginx(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+
+    xray.disable_reality()
+    assert not (paths / "xray" / "xray-reality.json").exists()
+    assert (paths / "xray" / "xray-reality.json.disabled").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 0.0.0.0:443 ssl" in ng
+
+    xray.enable_reality()
+    assert (paths / "xray" / "xray-reality.json").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 127.0.0.1:8443 ssl" in ng
+
+
+def test_disable_reality_rolls_back_on_nginx_failure(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    from vwn.modules.sub import get_disabled_protocols
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    monkeypatch.setattr(xray, "_restart_nginx_checked",
+                        lambda: (_ for _ in ()).throw(RuntimeError("nginx")))
+    with pytest.raises(RuntimeError):
+        xray.disable_reality()
+    assert (paths / "xray" / "xray-reality.json").exists()
+    assert "reality" not in get_disabled_protocols()
+
+
+def test_apply_users_skips_disabled_reality(paths, monkeypatch):
+    import vwn.modules.users as users
+    monkeypatch.setattr(users, "USERS_FILE", str(paths / "users.conf"))
+    (paths / "users.conf").write_text("u1|one|t1\n", encoding="utf-8")
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("DISABLED_PROTOCOLS", "reality")
+    calls = []
+    monkeypatch.setattr(users.shell, "run", lambda cmd, *a, **k: calls.append(list(cmd)))
+    users.apply_users_to_configs()
+    assert not any("xray-reality" in " ".join(c) for c in calls)
+
+
+def test_rebuild_disabled_reality_keeps_users(paths, monkeypatch):
+    import vwn.modules.users as users
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(users, "USERS_FILE", str(paths / "users.conf"))
+    (paths / "users.conf").write_text("u1|one|t1\nu2|two|t2\n", encoding="utf-8")
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    xray.disable_reality()
+    xray.rebuild_configs()
+
+    cfg = json.loads((paths / "xray" / "xray-reality.json.disabled").read_text(encoding="utf-8"))
+    ids = [c["id"] for c in cfg["inbounds"][0]["settings"]["clients"]]
+    assert ids == ["u1", "u2"]
+
+
+def test_rebuild_respects_disabled_reality(paths, monkeypatch):
+    import vwn.modules.sub as _sub
+    monkeypatch.setattr(_sub, "rebuild_all_sub_files", lambda *a, **k: 0)
+    monkeypatch.setattr(xray, "_restart_nginx_checked", lambda: None)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: None)
+    xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    xray.disable_reality()
+    xray.rebuild_configs()
+
+    assert not (paths / "xray" / "xray-reality.json").exists()
+    assert (paths / "xray" / "xray-reality.json.disabled").exists()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "listen 0.0.0.0:443 ssl" in ng

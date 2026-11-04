@@ -103,6 +103,7 @@ def manage_reality() -> None:
             if disabled:
                 run_task("Включение Reality", enable_reality)
             else:
+                console.print("  [yellow]nginx переедет на 443, XHTTP/gRPC/WS останутся доступны, Reality-ссылка исчезнет[/]")
                 if input("Отключить Reality? (y/N): ").strip().lower() == "y":
                     run_task("Отключение Reality", disable_reality)
         wait_key()
@@ -147,7 +148,7 @@ def manage_grpc_xhttp() -> None:
         console.print(f"  XHTTP:    {info['xhttp_path']} (mode: {info['xhttp_mode']})")
         console.print(f"  XHTTP CDN: {info.get('xhttp_cdn_mode', 'auto')}")
         console.print(f"  WS:       {info.get('ws_path', '')}")
-        console.print(f"  VE:       {'on' if ve['enabled'] else 'off'}")
+        console.print(f"  VE:       {'on' if ve['enabled'] else 'off'} (Reality: none)")
         console.print(f"  UUID:     {info['uuid'][:12]}...")
         console.print("  1. Показать информацию (полная)")
         console.print("  2. Показать QR (gRPC)")

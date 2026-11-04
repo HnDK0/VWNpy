@@ -81,7 +81,8 @@ def _config_summary() -> str:
         ("Domain", config.vwn_conf_get("DOMAIN") or "-"),
         ("Reality SNI (домен)", config.vwn_conf_get("REALITY_DEST") or "-"),
         ("Reality port", config.vwn_conf_get("REALITY_PORT") or "443"),
-        ("VLESS Encryption", "on" if (xray.read_vless_encryption()["enabled"]) else "off"),
+        ("VLESS Encryption", ("on (XHTTP/gRPC/WS), Reality none"
+                              if xray.read_vless_encryption()["enabled"] else "off")),
         ("Users", users_info),
         ("Server IP", config.vwn_conf_get("SERVER_IP") or "-"),
     ]

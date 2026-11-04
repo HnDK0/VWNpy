@@ -130,9 +130,9 @@ def get_country_flag(ip: str) -> str:
     return "\U0001f310"
 
 
-def get_cached_flag() -> str:
+def get_cached_flag(force_refresh: bool = False) -> str:
     global _VWN_FLAG_CACHE
-    if _VWN_FLAG_CACHE is None:
+    if force_refresh or _VWN_FLAG_CACHE is None:
         ip = config.vwn_conf_get("SERVER_IP") or ""
         _VWN_FLAG_CACHE = get_country_flag(ip) if ip else "\U0001f310"
     return _VWN_FLAG_CACHE
@@ -400,7 +400,11 @@ def apply_users_to_configs() -> None:
         _write_json(reality_path, r_cfg)
 
     shell.run(["systemctl", "daemon-reload"], check=False)
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
     for svc in config.XRAY_SERVICES:
+        if svc.removeprefix("xray-") in disabled:
+            continue
         shell.run(["systemctl", "restart", svc], check=False)
 
 
