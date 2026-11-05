@@ -198,6 +198,7 @@ vwn backup                 Резервное копирование
 vwn restore                Восстановление из бэкапа
 vwn update                 Обновление VWNpy с git (git pull + pip install)
 vwn update-xray            Обновление Xray-core до последней версии
+vwn update-mihomo          Обновление mihomo до последней версии
 vwn open-80                Открыть порт 80 в UFW (хук acme.sh)
 vwn close-80               Закрыть порт 80 в UFW (хук acme.sh)
 ```

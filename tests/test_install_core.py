@@ -1,4 +1,7 @@
+from click.testing import CliRunner
+
 from vwn.core import config
+from vwn.cores import versions
 from vwn.cores.mihomo import MihomoBackend
 from vwn.install import InstallOptions, _provision_core
 from vwn.modules import users
@@ -27,6 +30,20 @@ def test_provision_mihomo_writes_configs_and_keys(tmp_path, monkeypatch):
     assert config.core_name() == "mihomo"
     assert config.vwn_conf_get("REALITY_PRIVKEY") == "priv"
     assert config.vwn_conf_get("VLESS_DECRYPTION") == "dec"
+
+
+def test_update_mihomo_command_installs_latest(monkeypatch):
+    from vwn import cli as vcli
+
+    calls = {}
+    monkeypatch.setattr(versions, "latest_version", lambda: "v9.9.9")
+    monkeypatch.setattr(versions, "current_version", lambda: "v9.9.8")
+    monkeypatch.setattr(versions, "install_mihomo",
+                        lambda v: calls.setdefault("version", v) or v)
+    monkeypatch.setattr(config, "core_name", lambda: "xray")
+    r = CliRunner().invoke(vcli.cli, ["update-mihomo"])
+    assert r.exit_code == 0, r.output
+    assert calls["version"] == "v9.9.9"
 
 
 def test_provision_mihomo_overwrites_stale_private_key(tmp_path, monkeypatch):

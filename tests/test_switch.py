@@ -1,3 +1,5 @@
+import subprocess
+
 from vwn.cores import switch
 
 
@@ -50,6 +52,9 @@ def test_switch_sets_core_before_rebuild_and_starts_target(monkeypatch):
     assert new.rebuilt is True
     assert ("systemctl", "start", "mihomo-reality") in events
     assert ("systemctl", "daemon-reload") in events
+    assert events.index(("systemctl", "restart", "nginx")) < events.index(
+        ("systemctl", "start", "mihomo-reality")
+    )
 
 
 def test_switch_rolls_back_when_target_service_fails(monkeypatch):
@@ -81,6 +86,21 @@ def test_switch_rolls_back_when_target_service_fails(monkeypatch):
     assert state["core"] == "xray"
     assert old.rebuilt is True
     assert ("systemctl", "start", "xray-reality") in events
+
+
+def test_reality_tls_probe_closes_stdin(monkeypatch):
+    calls = []
+
+    class R:
+        returncode = 0
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        return R()
+    monkeypatch.setattr(switch.config, "vwn_conf_get",
+                        lambda key: "vpn.example.com" if key == "DOMAIN" else None)
+    monkeypatch.setattr(switch.shell, "run", fake_run)
+    assert switch._reality_tls_ok() is True
+    assert calls[0][1]["stdin"] is subprocess.DEVNULL
 
 
 def test_switch_blocks_mihomo_when_mptcp_on(monkeypatch):

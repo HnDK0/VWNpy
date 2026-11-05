@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import time
 
 from vwn.core import config, shell
@@ -86,6 +87,7 @@ def _reality_tls_ok() -> bool:
         ["openssl", "s_client", "-connect", f"127.0.0.1:{port}",
          "-servername", domain, "-tls1_3", "-brief"],
         capture=True, check=False, timeout=10,
+        stdin=subprocess.DEVNULL,
     )
     return True if r is None or r.returncode == 127 else r.returncode == 0
 
@@ -233,11 +235,11 @@ def recover_pending() -> None:
     target_services = _active_services(target)
     if target_services and all(shell.service_active(svc) for svc in target_services):
         config.vwn_conf_set("CORE", target.name)
-        _disable_services(old.services)
+        _disable_services(_active_services(old))
         _clear_pending()
         return
 
-    _stop_services(target.services)
+    _stop_services(target_services)
     _restore_old(old)
     _clear_pending()
 
@@ -278,13 +280,15 @@ def switch_to(name: str) -> None:
 
     target_services = _active_services(target)
     _enable_services(target_services)
-    _stop_services_only(old.services)
-    _start_services(target_services)
+    _stop_services_only(_active_services(old))
+    # nginx должен освободить 443 до старта mihomo-reality. При reality on
+    # новый конфиг слушает 127.0.0.1:8443, при reality off — 443.
     shell.run(["systemctl", "restart", config.NGINX_SERVICE], check=False)
+    _start_services(target_services)
 
     failed = _healthy(target_services)
     if failed:
-        _stop_services(target.services)
+        _stop_services(target_services)
         _restore_old(old)
         _clear_pending()
         raise RuntimeError(

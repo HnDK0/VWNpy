@@ -432,6 +432,27 @@ def update_xray():
     click.echo("Готово.")
 
 
+@cli.command(name="update-mihomo")
+@click.option("--version", default=None, help="Версия (по умолчанию latest)")
+@click.option("--check", is_flag=True, help="Только показать версии")
+def update_mihomo(version, check):
+    """Обновить mihomo до последней версии."""
+    from vwn.core import config as vwn_cfg
+    from vwn.cores import registry, versions
+
+    latest = versions.latest_version()
+    target = version or latest
+    if check:
+        click.echo(f"Установлена: {versions.current_version()}")
+        click.echo(f"Latest:      {latest}")
+        return
+    click.echo(f"Обновление mihomo: {versions.current_version()} → {target}")
+    versions.install_mihomo(target)
+    if vwn_cfg.core_name() == "mihomo":
+        registry.get_core("mihomo").rebuild(refresh_ip=False)
+    click.echo("Готово.")
+
+
 @cli.command(name="vless-enc")
 @click.argument("action", type=click.Choice(["on", "off"]))
 def vless_enc(action):

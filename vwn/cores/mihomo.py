@@ -441,7 +441,8 @@ class MihomoBackend:
     def install(self, version: "str | None" = None) -> None:
         from . import versions
 
-        shell.run(["useradd", "-r", "-s", "/usr/sbin/nologin",
+        shell.run(["groupadd", "-f", "mihomo"], check=False)
+        shell.run(["useradd", "-r", "-g", "mihomo", "-s", "/usr/sbin/nologin",
                    "-d", config.MIHOMO_DIR, "mihomo"], check=False)
         versions.install_mihomo(version)
         try:
