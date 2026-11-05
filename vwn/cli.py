@@ -251,7 +251,7 @@ def qr(type):
             raise click.ClickException(
                 "XHTTP direct скрыт (XHTTP_DIRECT=off) — используйте --type xhttp-cdn"
             )
-        url = sub.generate_xhttp_url(uuid, server_ip, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False), vless_encryption=enc)
+        url = sub.generate_xhttp_url(uuid, ip, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False), vless_encryption=enc)
     elif type == "xhttp-cdn":
         from vwn.core import config as _c
         connect_host = domain
@@ -286,8 +286,12 @@ def qr(type):
         click.echo(f"Неизвестный тип: {type}", err=True)
         return
 
-    r = subprocess.run(["qrencode", "-t", "ANSIUTF8"], input=url, capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout:
+    try:
+        r = subprocess.run(["qrencode", "-t", "ANSIUTF8"], input=url,
+                           capture_output=True, text=True)
+    except OSError:
+        r = None
+    if r is not None and r.returncode == 0 and r.stdout:
         click.echo(r.stdout)
     else:
         click.echo(url)

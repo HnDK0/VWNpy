@@ -42,10 +42,30 @@ def _enable_services(services: tuple[str, ...]) -> None:
         shell.run(["systemctl", "enable", svc], check=False)
 
 
-def _start_services(services: tuple[str, ...]) -> None:
+def _start_services(services: tuple[str, ...]) -> list[str]:
+    failed: list[str] = []
     for svc in services:
         shell.run(["systemctl", "enable", svc], check=False)
-        shell.run(["systemctl", "start", svc], check=False)
+        r = shell.run(["systemctl", "start", svc], capture=True, check=False)
+        if r is not None and r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()
+            failed.append(f"{svc}: {detail[:200]}" if detail else svc)
+    return failed
+
+
+def _wait_ports_free(services: tuple[str, ...], timeout: float = 10.0) -> list[int]:
+    """Дождаться, пока порты target-сервисов освободятся после stop."""
+    ports = [p for p in (_port_for(svc) for svc in services) if p]
+    if not ports:
+        return []
+    deadline = time.monotonic() + timeout
+    while True:
+        busy = [p for p in ports if shell.port_listening(p, timeout=0.25)]
+        if not busy:
+            return []
+        if time.monotonic() >= deadline:
+            return busy
+        time.sleep(0.25)
 
 
 def _active_services(backend) -> tuple[str, ...]:
@@ -126,6 +146,20 @@ def _transport_ok() -> bool:
         if c in ("", "000", "502", "503", "504"):
             return False
     return True
+
+
+def _wait_services_ready(services: tuple[str, ...], timeout: float = 12.0) -> None:
+    """Дать mihomo поднять listeners: он грузит geosite несколько секунд."""
+    if not all(shell.service_active(svc) for svc in services):
+        return
+    ports = [p for p in (_port_for(svc) for svc in services) if p]
+    if not ports:
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if all(_port_listening(p) for p in ports):
+            return
+        time.sleep(0.5)
 
 
 def _healthy(services: tuple[str, ...]) -> list[str]:
@@ -281,20 +315,36 @@ def switch_to(name: str) -> None:
 
     target_services = _active_services(target)
     _enable_services(target_services)
-    _stop_services_only(_active_services(old))
+    # Останавливаем ВСЕ сервисы старого и целевого ядра, включая выключенные
+    # протоколы: иначе старый процесс может держать порт и новый не забиндится.
+    _stop_services_only(old.services)
+    _stop_services_only(target.services)
     # nginx должен освободить 443 до старта mihomo-reality. При reality on
     # новый конфиг слушает 127.0.0.1:8443, при reality off — 443.
     shell.run(["systemctl", "restart", config.NGINX_SERVICE], check=False)
-    _start_services(target_services)
-
-    failed = _healthy(target_services)
-    if failed:
-        _stop_services(target_services)
+    busy = _wait_ports_free(target_services)
+    if busy:
+        _stop_services_only(target_services)
         _restore_old(old)
         _clear_pending()
         raise RuntimeError(
-            "Не удалось запустить %s: %s. Выполнен откат на %s."
-            % (target.name, ", ".join(failed), old.name)
+            "Порты не освободились: %s. Выполнен откат на %s."
+            % (", ".join(str(p) for p in busy), old.name)
+        )
+    start_errors = _start_services(target_services)
+    _wait_services_ready(target_services)
+
+    failed = _healthy(target_services)
+    if failed:
+        _stop_services_only(target_services)
+        _restore_old(old)
+        _clear_pending()
+        detail = ""
+        if start_errors:
+            detail = " Ошибки запуска: " + "; ".join(start_errors)
+        raise RuntimeError(
+            "Не удалось запустить %s: %s.%s Выполнен откат на %s."
+            % (target.name, ", ".join(failed), detail, old.name)
         )
 
     _disable_services(old.services)

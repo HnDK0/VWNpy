@@ -165,6 +165,75 @@ def test_recover_pending_restores_old(monkeypatch):
     assert ("systemctl", "start", "xray-reality") in events
 
 
+def test_switch_stops_stale_target_services_and_waits_for_ports(monkeypatch):
+    state = {"core": "xray"}
+    events = []
+    probes = []
+
+    old = FakeBackend("xray", ("xray-reality", "xray-grpc"))
+    new = FakeBackend("mihomo", ("mihomo-reality", "mihomo-grpc"))
+
+    def get_core(name=None):
+        return new if (name or state["core"]) == "mihomo" else old
+
+    monkeypatch.setattr(switch.registry, "get_core", get_core)
+    monkeypatch.setattr(switch.config, "core_name", lambda: state["core"])
+    monkeypatch.setattr(switch.config, "vwn_conf_set",
+                        lambda k, v: state.__setitem__("core", v) if k == "CORE" else None)
+    monkeypatch.setattr(switch.config, "vwn_conf_del", lambda k: None)
+    monkeypatch.setattr(switch.keystore, "migrate_from_xray_configs", lambda: None)
+    monkeypatch.setattr(switch.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(switch.shell, "service_active", lambda svc: True)
+    monkeypatch.setattr(switch.shell, "run",
+                        lambda *a, **k: events.append(tuple(a[0]) if a else ()))
+
+    def port_listening(port, timeout=2):
+        probes.append(port)
+        return len(probes) == 1
+
+    monkeypatch.setattr(switch.shell, "port_listening", port_listening)
+
+    switch.switch_to("mihomo")
+
+    assert ("systemctl", "stop", "xray-grpc") in events
+    assert ("systemctl", "stop", "mihomo-grpc") in events
+    assert probes
+    assert events.index(("systemctl", "start", "mihomo-reality")) > events.index(
+        ("systemctl", "restart", "nginx")
+    )
+
+
+def test_switch_restores_old_when_ports_stay_busy(monkeypatch):
+    state = {"core": "xray"}
+    events = []
+    old = FakeBackend("xray", ("xray-reality",))
+    new = FakeBackend("mihomo", ("mihomo-reality",))
+
+    def get_core(name=None):
+        return new if (name or state["core"]) == "mihomo" else old
+
+    monkeypatch.setattr(switch.registry, "get_core", get_core)
+    monkeypatch.setattr(switch.config, "core_name", lambda: state["core"])
+    monkeypatch.setattr(switch.config, "vwn_conf_set",
+                        lambda k, v: state.__setitem__("core", v) if k == "CORE" else None)
+    monkeypatch.setattr(switch.config, "vwn_conf_del", lambda k: None)
+    monkeypatch.setattr(switch.keystore, "migrate_from_xray_configs", lambda: None)
+    monkeypatch.setattr(switch.shell, "service_active", lambda svc: True)
+    monkeypatch.setattr(switch.shell, "run",
+                        lambda *a, **k: events.append(tuple(a[0]) if a else ()))
+    monkeypatch.setattr(switch, "_wait_ports_free", lambda services: [443])
+
+    try:
+        switch.switch_to("mihomo")
+    except RuntimeError as exc:
+        assert "Порты не освободились" in str(exc)
+    else:
+        raise AssertionError("должен быть откат при занятых портах")
+    assert state["core"] == "xray"
+    assert not any(e[:3] == ("systemctl", "start", "mihomo-reality") for e in events)
+    assert ("systemctl", "start", "xray-reality") in events
+
+
 def test_switch_restores_old_when_units_fail(monkeypatch):
     state = {"core": "xray"}
     events = []
