@@ -166,21 +166,31 @@ def _diag_geoip() -> None:
 
 
 def _diag_xray_test() -> None:
-    console.print("--- Xray Config Tests ---")
-    for label, path in [("Reality", os.path.join(config.XRAY_DIR, "xray-reality.json")),
-                         ("gRPC", os.path.join(config.XRAY_DIR, "grpc.json")),
-                         ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json")),
-                         ("WS", os.path.join(config.XRAY_DIR, "ws.json"))]:
+    from vwn.cores import registry
+
+    backend = registry.get_core()
+    console.print(f"--- {backend.name} Config Tests ---")
+    if backend.name == "xray":
+        paths = [("Reality", os.path.join(config.XRAY_DIR, "xray-reality.json")),
+                 ("gRPC", os.path.join(config.XRAY_DIR, "grpc.json")),
+                 ("XHTTP", os.path.join(config.XRAY_DIR, "xhttp.json")),
+                 ("WS", os.path.join(config.XRAY_DIR, "ws.json"))]
+    else:
+        paths = [
+            (key.title(), os.path.join(config.MIHOMO_DIR, key, name))
+            for key, name in zip(("reality", "grpc", "xhttp", "ws"),
+                                 backend.config_files)
+        ]
+    for label, path in paths:
         if not os.path.isfile(path):
             console.print(f"  {label:7}: {_skip('no config')}")
             continue
-        r = shell.run([config.XRAY_BIN, "-test", "-config", path],
-                       capture=True, check=False, timeout=15)
-        ok = r.returncode == 0
-        console.print(f"  {label:7}: {_ok('OK') if ok else _fail('FAIL')}")
-        if not ok:
-            for line in (r.stdout or "").splitlines()[-3:]:
-                console.print(f"          {line}")
+        try:
+            backend.validate(path)
+            console.print(f"  {label:7}: {_ok('OK')}")
+        except Exception as exc:
+            console.print(f"  {label:7}: {_fail('FAIL')}")
+            console.print(f"          {str(exc)[-200:]}")
     console.print()
 
 
@@ -195,14 +205,19 @@ def _diag_transports() -> None:
     xh = config.vwn_conf_get("XHTTP_PATH") or "/xhttp"
     resolve = f"{domain}:{port}:127.0.0.1"
 
+    from vwn.cores import registry
+    core_name = registry.get_core().name
     cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control"
     cc = open(cc_path).read().split() if os.path.exists(cc_path) else []
-    rp = os.path.join(config.XRAY_DIR, "xray-reality.json")
-    rcfg = open(rp).read() if os.path.exists(rp) else ""
-    if '"tcpCongestion"' in rcfg and "bbr" not in cc:
-        console.print(f"  BBR: {_fail('в конфиге есть, в ядре нет', '→ vwn rebuild')}")
+    if core_name == "xray":
+        rp = os.path.join(config.XRAY_DIR, "xray-reality.json")
+        rcfg = open(rp).read() if os.path.exists(rp) else ""
+        if '"tcpCongestion"' in rcfg and "bbr" not in cc:
+            console.print(f"  BBR: {_fail('в конфиге есть, в ядре нет', '→ vwn rebuild')}")
+        else:
+            console.print(f"  BBR/sockopt: {_ok('OK')}")
     else:
-        console.print(f"  BBR/sockopt: {_ok('OK')}")
+        console.print(f"  BBR/sockopt: {_skip('mihomo: системный BBR')}")
 
     def _code(args: list) -> str:
         r = shell.run(["curl", "-sk", "-o", "/dev/null", "-m", "8", "-w", "%{http_code}",
@@ -212,17 +227,17 @@ def _diag_transports() -> None:
 
     ve = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
     if ve and ve != "none":
-        console.print("  gRPC (nginx→xray): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
+        console.print("  gRPC (nginx→" + core_name + "): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
         console.print("  XHTTP (grpc_pass): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
         return
     if not svc:
-        console.print(f"  gRPC (nginx→xray): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
+        console.print(f"  gRPC (nginx→{core_name}): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
     else:
         pad = "X" * 500
         c = _code(["--http2", "-X", "POST", "-H", "content-type: application/grpc",
                    "-H", "Referer: https://%s/?x_padding=%s" % (domain, pad),
                    "--data-binary", "", f"https://{domain}:{port}/{svc}/Tun"])
-        console.print(f"  gRPC (nginx→xray): "
+        console.print(f"  gRPC (nginx→{core_name}): "
                       + (_ok(c) if c == "200" else _fail(c or "нет ответа", "ожидается 200")))
         c = _code(["--http2", f"https://{domain}:{port}/{svc}/Tun"])
         console.print(f"  gRPC (проба 404):  "
@@ -254,13 +269,12 @@ def run_full_diag() -> None:
     console.print()
 
     console.print("--- Services ---")
-    for label, svc in [("xray-reality", "xray-reality.service"),
-                        ("xray-grpc", "xray-grpc.service"),
-                        ("xray-xhttp", "xray-xhttp.service"),
-                        ("xray-ws", "xray-ws.service"),
-                        ("nginx", "nginx.service"),
-                        ("warp-svc", "warp-svc.service"),
-                        ("fail2ban", "fail2ban.service")]:
+    from vwn.cores import registry
+    service_pairs = [(s, s + ".service") for s in registry.get_core().services]
+    service_pairs += [("nginx", "nginx.service"),
+                      ("warp-svc", "warp-svc.service"),
+                      ("fail2ban", "fail2ban.service")]
+    for label, svc in service_pairs:
         console.print(_check_service(label, svc))
     console.print()
 

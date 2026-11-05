@@ -1,11 +1,18 @@
 import pytest
 
 from vwn.modules import xray
-from vwn.core import system
+from vwn.core import config, system
 
 
 _VALID_DEC = "mlkem768x25519plus.native.600s.100-111-1111.75-0-111.50-0-3333." + "a" * 24
 _VALID_ENC = "mlkem768x25519plus.native.0rtt.100-111-1111.75-0-111.50-0-3333." + "b" * 24
+
+@pytest.fixture(autouse=True)
+def _isolate_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
+    monkeypatch.setattr(config, "MIHOMO_DIR", str(tmp_path / "mihomo"))
+    monkeypatch.setattr(config, "KEYSTORE", str(tmp_path / "xray" / "keys.env"))
+
 
 @pytest.fixture(autouse=True)
 def _stub_vless_keypair(monkeypatch):

@@ -22,9 +22,9 @@ def dashboard() -> None:
     now = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
     lines: list[str] = []
 
-    svcs = [service_status(s) for s in
-            ("xray-reality.service", "xray-grpc.service",
-             "xray-xhttp.service", "xray-ws.service", "nginx.service")]
+    from vwn.cores import registry
+    names = [f"{s}.service" for s in registry.get_core().services]
+    svcs = [service_status(s) for s in names + ["nginx.service"]]
     lines.append(f"[bold]Протоколы:[/]    {'  '.join(svcs)}")
 
     cdn = _cdn_status()

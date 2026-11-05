@@ -147,6 +147,8 @@ def manage_grpc_xhttp() -> None:
         console.print(f"  gRPC:     {info['grpc_service']} (mode: {info['grpc_mode']})")
         console.print(f"  XHTTP:    {info['xhttp_path']} (mode: {info['xhttp_mode']})")
         console.print(f"  XHTTP CDN: {info.get('xhttp_cdn_mode', 'auto')}")
+        from vwn.modules import sub as _sub_state
+        console.print(f"  XHTTP direct: {'публикуется' if _sub_state.xhttp_direct_enabled() else 'скрыт'}")
         console.print(f"  WS:       {info.get('ws_path', '')}")
         console.print(f"  VE:       {'on' if ve['enabled'] else 'off'} (Reality: none)")
         console.print(f"  UUID:     {info['uuid'][:12]}...")
@@ -185,6 +187,7 @@ def manage_grpc_xhttp() -> None:
             console.print(" 23. Отключить VLESS Encryption")
         else:
             console.print(" 23. Включить VLESS Encryption")
+        console.print(" 24. XHTTP direct: вкл/выкл")
         console.print("  0. Назад")
         val = input("> ").strip()
         if val == "0":
@@ -337,4 +340,8 @@ def manage_grpc_xhttp() -> None:
                     run_task("Отключение VLESS Encryption", disable_vless_encryption)
             else:
                 run_task("Включение VLESS Encryption", lambda: enable_vless_encryption(force_new_keys=True))
+        elif val == "24":
+            from vwn.modules import sub as _sub
+            action = "off" if _sub.xhttp_direct_enabled() else "on"
+            run_cmd(f"vwn sub xhttp-direct {action}")
         wait_key()

@@ -25,11 +25,15 @@ def full_remove() -> None:
     if confirm != "yes":
         return
     remove_cert = input("  Оставить SSL сертификат? (Y/n): ").strip().lower() == "n"
-    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    from vwn.cores import registry
+    for svc in list(registry.get_core().services) + [config.NGINX_SERVICE]:
         subprocess.run(["systemctl", "stop", svc])
         subprocess.run(["systemctl", "disable", svc])
-    paths = ["/usr/local/etc/xray", "/etc/nginx/conf.d/xray.conf",
-             "/etc/nginx/conf.d/sub_map.conf", "/etc/systemd/system/xray-*.service"]
+    paths = ["/usr/local/etc/xray", "/usr/local/etc/mihomo",
+             "/etc/nginx/conf.d/xray.conf", "/etc/nginx/conf.d/sub_map.conf",
+             "/etc/systemd/system/xray-*.service",
+             "/etc/systemd/system/mihomo-*.service",
+             "/usr/local/bin/mihomo", "/usr/local/bin/mihomo.prev"]
     if remove_cert:
         paths.append("/etc/nginx/cert")
     subprocess.run(["rm", "-rf"] + paths)
@@ -38,15 +42,16 @@ def full_remove() -> None:
 
 
 def _rebuild_configs() -> None:
-    """Пересобрать все конфиги."""
-    from vwn.modules.xray import rebuild_configs
+    """Пересобрать все конфиги активного ядра."""
+    from vwn.cores import registry
+    backend = registry.get_core()
     try:
-        rebuild_configs()
+        backend.rebuild(refresh_ip=True)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         return
     run_cmd("systemctl daemon-reload")
-    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    for svc in list(backend.services) + [config.NGINX_SERVICE]:
         run_cmd(f"systemctl restart {svc}")
     console.print("[bright_green]Конфиги пересобраны из текущих параметров[/]")
 
@@ -74,6 +79,35 @@ def _update_vwn() -> None:
                       check=True))
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+
+def _manage_core() -> None:
+    """Экран выбора/обновления ядра."""
+    from vwn.cores import registry, switch, versions
+
+    while True:
+        backend = registry.get_core()
+        version = versions.current_version() if backend.name == "mihomo" else "latest"
+        console.print(f"\n[bold]Ядро[/]  {backend.name} ({version})")
+        console.print(f"  Бинарь: {backend.bin}  "
+                      f"{'[green]есть[/]' if backend.available() else '[red]нет[/]'}")
+        console.print("  1. Переключить на xray")
+        console.print("  2. Переключить на mihomo")
+        console.print("  3. Обновить текущее ядро")
+        console.print("  0. Назад")
+        val = input("> ").strip()
+        if val == "0":
+            return
+        if val == "1":
+            run_task("Переключение на xray", lambda: switch.switch_to("xray"))
+            wait_key()
+        elif val == "2":
+            run_task("Переключение на mihomo", lambda: switch.switch_to("mihomo"))
+            wait_key()
+        elif val == "3":
+            run_task("Обновление ядра", lambda: backend.install())
+            wait_key()
 
 
 def _dispatch(choice: int) -> bool:
@@ -375,17 +409,26 @@ def _dispatch(choice: int) -> bool:
     elif choice == 14:
         _rebuild_configs()
     elif choice == 15:
-        for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+        from vwn.cores import registry
+        for svc in list(registry.get_core().services) + [config.NGINX_SERVICE]:
             run_cmd(f"systemctl restart {svc}")
         wait_key()
     elif choice == 16:
         full_remove()
+    elif choice == 17:
+        _manage_core()
     elif choice == 0:
         return False
     return True
 
 
 def run_menu() -> None:
+    from vwn.cores import switch
+
+    try:
+        switch.recover_pending()
+    except Exception as exc:
+        console.print(f"[yellow]Восстановление после переключения ядра: {exc}[/]")
     while True:
         console.clear()
         dashboard()
@@ -407,6 +450,7 @@ def run_menu() -> None:
             "Пересобрать все конфиги",
             "Перезапустить все сервисы",
             "Полное удаление",
+            "Ядро (xray / mihomo)",
         ]
         for i, item in enumerate(items, 1):
             console.print(f"  {i}. {item}")

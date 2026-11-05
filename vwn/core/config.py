@@ -32,6 +32,15 @@ NGINX_SERVICE = "nginx"
 XRAY_CONFIG_FILES = ("xray-reality.json", "grpc.json", "xhttp.json", "ws.json")
 XRAY_SERVICES = ("xray-reality", "xray-grpc", "xray-xhttp", "xray-ws")
 
+# ── Selectable core ────────────────────────────────────────────────
+CORE_DEFAULT = "xray"
+CORE_NAMES = ("xray", "mihomo")
+MIHOMO_BIN = "/usr/local/bin/mihomo"
+MIHOMO_DIR = "/usr/local/etc/mihomo"
+MIHOMO_CONFIG_FILES = ("reality.yaml", "grpc.yaml", "xhttp.yaml", "ws.yaml")
+MIHOMO_SERVICES = ("mihomo-reality", "mihomo-grpc", "mihomo-xhttp", "mihomo-ws")
+KEYSTORE = os.path.join(XRAY_DIR, "keys.env")
+
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _B64_PREFIX = "@b64:"
 
@@ -57,6 +66,21 @@ def vwn_conf_get(key: str) -> "str | None":
     return None
 
 
+def _write_conf_lines(lines: "list[str]") -> None:
+    os.makedirs(os.path.dirname(vwn_conf_path()), exist_ok=True)
+    tmp = f"{vwn_conf_path()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + ("\n" if lines else ""))
+    os.replace(tmp, vwn_conf_path())
+    os.chmod(vwn_conf_path(), 0o600)
+
+
 def vwn_conf_set(key: str, value: str) -> None:
     """Записать/обновить значение в vwn.conf. Небезопасные значения кодируются в @b64."""
     if not KEY_RE.match(key):
@@ -66,7 +90,6 @@ def vwn_conf_set(key: str, value: str) -> None:
     if re.search(r"[^a-zA-Z0-9_=.,:@%/\-]", value):
         safe = _B64_PREFIX + base64.b64encode(value.encode("utf-8")).decode("ascii")
 
-    os.makedirs(os.path.dirname(vwn_conf_path()), exist_ok=True)
     lines = []
     found = False
     if os.path.isfile(vwn_conf_path()):
@@ -80,12 +103,7 @@ def vwn_conf_set(key: str, value: str) -> None:
                     lines.append(line)
     if not found:
         lines.append(f"{key}={safe}")
-
-    tmp = f"{vwn_conf_path()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
-    os.replace(tmp, vwn_conf_path())
-    os.chmod(vwn_conf_path(), 0o600)
+    _write_conf_lines(lines)
 
 
 def vwn_conf_del(key: str) -> None:
@@ -98,7 +116,10 @@ def vwn_conf_del(key: str) -> None:
             if raw.rstrip("\n").split("=", 1)[0] == key:
                 continue
             lines.append(raw.rstrip("\n"))
-    tmp = f"{vwn_conf_path()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + ("\n" if lines else ""))
-    os.replace(tmp, vwn_conf_path())
+    _write_conf_lines(lines)
+
+
+def core_name() -> str:
+    """Активное ядро из vwn.conf (по умолчанию xray)."""
+    value = vwn_conf_get("CORE") or CORE_DEFAULT
+    return value if value in CORE_NAMES else CORE_DEFAULT

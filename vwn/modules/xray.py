@@ -598,6 +598,11 @@ def _restore_nginx_conf(old: "str | None") -> None:
 
 
 def disable_reality() -> None:
+    from vwn.cores import registry
+    backend = registry.get_core()
+    if backend.name == "mihomo":
+        backend.disable_protocol("reality")
+        return
     old_conf = _read_nginx_conf()
     p = os.path.join(config.XRAY_DIR, "xray-reality.json")
     renamed = False
@@ -623,6 +628,11 @@ def disable_reality() -> None:
 
 
 def enable_reality() -> None:
+    from vwn.cores import registry
+    backend = registry.get_core()
+    if backend.name == "mihomo":
+        backend.enable_protocol("reality")
+        return
     old_conf = _read_nginx_conf()
     try:
         _del_disabled("reality")
@@ -658,6 +668,43 @@ def set_xhttp_cdn_mode(mode: str) -> None:
     config.vwn_conf_set("XHTTP_CDN_MODE", mode)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
+
+
+def nginx_grpc_location(service: str, port: int) -> str:
+    return (
+        "location ^~ /" + service + " {\n"
+        '    if ($content_type !~ "^application/grpc") {\n'
+        "        return 404;\n"
+        "    }\n"
+        "    client_max_body_size 0;\n"
+        "    client_body_buffer_size 0;\n"
+        "    client_body_timeout 1w;\n"
+        "    grpc_read_timeout 1w;\n"
+        "    grpc_send_timeout 1w;\n"
+        "    grpc_buffer_size 64k;\n"
+        "    send_timeout 1w;\n"
+        "    grpc_set_header Host $host;\n"
+        "    access_log off;\n"
+        "    grpc_pass grpc://127.0.0.1:" + str(port) + ";\n"
+        "}"
+    )
+
+
+def nginx_xhttp_location(path: str, port: int) -> str:
+    return (
+        "location ^~ " + path + " {\n"
+        "    if ($request_method !~ ^(GET|POST)$) { return 404; }\n"
+        "    client_max_body_size 0;\n"
+        "    client_body_buffer_size 0;\n"
+        "    client_body_timeout 1w;\n"
+        "    grpc_read_timeout 1w;\n"
+        "    grpc_send_timeout 1w;\n"
+        "    grpc_buffer_size 64k;\n"
+        "    send_timeout 1w;\n"
+        "    grpc_set_header Host $host;\n"
+        "    grpc_pass grpc://127.0.0.1:" + str(port) + ";\n"
+        "}"
+    )
 
 
 def write_nginx_loopback_config(template: str, output: str, **kw) -> None:
@@ -814,6 +861,8 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
                    "    access_log off;\n"
                    "    proxy_pass http://127.0.0.1:" + str(config.XRAY_WS_PORT) + ";\n"
                    "}")
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
     write_nginx_loopback_config(
         tpl, config.NGINX_LOOPBACK_CONF,
         NGINX_BIND="127.0.0.1",
@@ -821,6 +870,10 @@ def provision_configs(domain: str, stub: str, reality_dest: str = "",
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
         WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
         WS_MAP=ws_map, WS_LOCATION=ws_location,
+        GRPC_LOCATION=("" if "grpc" in disabled else
+                       nginx_grpc_location(grpc_service, config.XRAY_GRPC_PORT)),
+        XHTTP_LOCATION=("" if "xhttp" in disabled else
+                        nginx_xhttp_location(xhttp_path, config.XRAY_XHTTP_PORT)),
         XRAY_GRPC_PORT=config.XRAY_GRPC_PORT, XRAY_XHTTP_PORT=config.XRAY_XHTTP_PORT,
     )
 
@@ -903,16 +956,17 @@ def rebuild_configs(refresh_ip: bool = False) -> None:
 
     reality_path = os.path.join(config.XRAY_DIR, "xray-reality.json")
     reality_disabled_path = reality_path + ".disabled"
-    r_cfg = _read_json(reality_path)
-    if r_cfg is None:
-        r_cfg = _read_json(reality_disabled_path)
-    if r_cfg is None:
-        raise RuntimeError("xray-reality.json не найден — невозможно пересобрать")
-    private_key = (r_cfg.get("inbounds", [{}])[0]
-                   .get("streamSettings", {}).get("realitySettings", {})
-                   .get("privateKey", ""))
+    r_cfg = _read_json(reality_path) or _read_json(reality_disabled_path)
+    private_key = ""
+    if r_cfg:
+        private_key = (r_cfg.get("inbounds", [{}])[0]
+                       .get("streamSettings", {}).get("realitySettings", {})
+                       .get("privateKey", ""))
     if not private_key:
-        raise RuntimeError("Reality private_key не найден в текущем конфиге")
+        from vwn.cores import keystore
+        private_key = keystore.reality_private_key() or ""
+    if not private_key:
+        raise RuntimeError("Reality private_key не найден (vwn.conf/xray-reality.json)")
     # Если Reality был отключён, пересборка не должна оставлять его выключенным
     # без явного пользователя; конфиг пересоздаётся, но статус сохраняется.
 
@@ -1033,7 +1087,8 @@ def _re_render_nginx(**overrides) -> None:
     except OSError:
         pass
     from vwn.modules.sub import get_disabled_protocols
-    public = "reality" in get_disabled_protocols()
+    disabled = get_disabled_protocols()
+    public = "reality" in disabled
     bind = "0.0.0.0" if public else "127.0.0.1"
     nginx_port = 443 if public else config.NGINX_LOOPBACK_PORT
     write_nginx_loopback_config(
@@ -1043,6 +1098,10 @@ def _re_render_nginx(**overrides) -> None:
         PROXY_HOST=proxy_host, GRPC_SERVICE=grpc_service, XHTTP_PATH=xhttp_path,
         WS_PATH=ws_path, XRAY_WS_PORT=config.XRAY_WS_PORT,
         WS_MAP=ws_map, WS_LOCATION=ws_location,
+        GRPC_LOCATION=("" if "grpc" in disabled else
+                       nginx_grpc_location(grpc_service, config.XRAY_GRPC_PORT)),
+        XHTTP_LOCATION=("" if "xhttp" in disabled else
+                        nginx_xhttp_location(xhttp_path, config.XRAY_XHTTP_PORT)),
         XRAY_GRPC_PORT=config.XRAY_GRPC_PORT, XRAY_XHTTP_PORT=config.XRAY_XHTTP_PORT,
     )
 
@@ -1234,74 +1293,65 @@ def renew_ssl(domain: str, method: str = "standalone",
     shell.run(["systemctl", "reload", "nginx"], check=False)
 
 
-def disable_grpc() -> None:
-    shell.run(["systemctl", "stop", "xray-grpc"], check=False)
-    shell.run(["systemctl", "disable", "xray-grpc"], check=False)
-    p = os.path.join(config.XRAY_DIR, "grpc.json")
-    if os.path.isfile(p):
-        os.rename(p, p + ".disabled")
-    _add_disabled("grpc")
+_PROTOCOLS = {
+    "grpc": ("xray-grpc", "grpc.json"),
+    "xhttp": ("xray-xhttp", "xhttp.json"),
+    "ws": ("xray-ws", "ws.json"),
+}
+
+
+def _toggle_protocol(proto: str, on: bool) -> None:
+    from vwn.cores import registry
+
+    backend = registry.get_core()
+    if backend.name == "mihomo":
+        if on:
+            backend.enable_protocol(proto)
+        else:
+            backend.disable_protocol(proto)
+        return
+    svc, name = _PROTOCOLS[proto]
+    p = os.path.join(config.XRAY_DIR, name)
+    if on:
+        if os.path.isfile(p + ".disabled"):
+            os.rename(p + ".disabled", p)
+        shell.run(["systemctl", "enable", svc], check=False)
+        shell.run(["systemctl", "start", svc], check=False)
+        _del_disabled(proto)
+    else:
+        shell.run(["systemctl", "stop", svc], check=False)
+        shell.run(["systemctl", "disable", svc], check=False)
+        if os.path.isfile(p):
+            os.rename(p, p + ".disabled")
+        _add_disabled(proto)
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
+    _re_render_nginx()
+    shell.run(["systemctl", "reload", "nginx"], check=False)
+
+
+def disable_grpc() -> None:
+    _toggle_protocol("grpc", False)
 
 
 def enable_grpc() -> None:
-    p = os.path.join(config.XRAY_DIR, "grpc.json.disabled")
-    if os.path.isfile(p):
-        os.rename(p, p.removesuffix(".disabled"))
-    shell.run(["systemctl", "enable", "xray-grpc"], check=False)
-    shell.run(["systemctl", "start", "xray-grpc"], check=False)
-    _del_disabled("grpc")
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    _toggle_protocol("grpc", True)
 
 
 def disable_xhttp() -> None:
-    shell.run(["systemctl", "stop", "xray-xhttp"], check=False)
-    shell.run(["systemctl", "disable", "xray-xhttp"], check=False)
-    p = os.path.join(config.XRAY_DIR, "xhttp.json")
-    if os.path.isfile(p):
-        os.rename(p, p + ".disabled")
-    _add_disabled("xhttp")
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    _toggle_protocol("xhttp", False)
 
 
 def enable_xhttp() -> None:
-    p = os.path.join(config.XRAY_DIR, "xhttp.json.disabled")
-    if os.path.isfile(p):
-        os.rename(p, p.removesuffix(".disabled"))
-    shell.run(["systemctl", "enable", "xray-xhttp"], check=False)
-    shell.run(["systemctl", "start", "xray-xhttp"], check=False)
-    _del_disabled("xhttp")
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    _toggle_protocol("xhttp", True)
 
 
 def disable_ws() -> None:
-    shell.run(["systemctl", "stop", "xray-ws"], check=False)
-    shell.run(["systemctl", "disable", "xray-ws"], check=False)
-    p = os.path.join(config.XRAY_DIR, "ws.json")
-    if os.path.isfile(p):
-        os.rename(p, p + ".disabled")
-    _add_disabled("ws")
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
-    _re_render_nginx()
-    shell.run(["systemctl", "reload", "nginx"], check=False)
+    _toggle_protocol("ws", False)
 
 
 def enable_ws() -> None:
-    p = os.path.join(config.XRAY_DIR, "ws.json.disabled")
-    if os.path.isfile(p):
-        os.rename(p, p.removesuffix(".disabled"))
-    shell.run(["systemctl", "enable", "xray-ws"], check=False)
-    shell.run(["systemctl", "start", "xray-ws"], check=False)
-    _del_disabled("ws")
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
-    _re_render_nginx()
-    shell.run(["systemctl", "reload", "nginx"], check=False)
+    _toggle_protocol("ws", True)
 
 
 def update_ws_path(path: str) -> None:
@@ -1337,6 +1387,9 @@ def _generate_and_store_vless() -> str:
         raise RuntimeError("xray vlessenc не вернул ключи")
     config.vwn_conf_set("VLESS_DECRYPTION", dec)
     config.vwn_conf_set("VLESS_ENCRYPTION", enc)
+    from vwn.cores import keystore
+    keystore.set("VLESS_DECRYPTION", dec)
+    keystore.set("VLESS_ENCRYPTION", enc)
     return dec
 
 
@@ -1349,6 +1402,9 @@ def resolve_vless_policy(force_new_keys: bool = False,
             return _generate_and_store_vless()
         return "none"
     if dec and enc:
+        from vwn.cores import keystore
+        keystore.set("VLESS_DECRYPTION", dec)
+        keystore.set("VLESS_ENCRYPTION", enc)
         return dec
     if dec and not enc:
         if force or force_new_keys:
@@ -1365,17 +1421,19 @@ def resolve_vless_policy(force_new_keys: bool = False,
 def enable_vless_encryption(force_new_keys: bool = False) -> None:
     print("  Внимание: старые клиенты без поддержки VLESS Encryption перестанут работать")
     resolve_vless_policy(force=True, force_new_keys=force_new_keys)
-    # rewrite configs with decryption
-    rebuild_configs()
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
+    from vwn.cores import registry
+    backend = registry.get_core()
+    backend.rebuild()
+    for svc in backend.services:
+        shell.run(["systemctl", "restart", svc], check=False)
 
 
 def disable_vless_encryption() -> None:
     config.vwn_conf_set("VLESS_DECRYPTION", "none")
     config.vwn_conf_del("VLESS_ENCRYPTION")
-    rebuild_configs()
-    from vwn.modules.sub import rebuild_all_sub_files
-    rebuild_all_sub_files()
-    for svc in config.XRAY_SERVICES:
+    from vwn.cores import keystore, registry
+    keystore.set("VLESS_DECRYPTION", "none", overwrite=True)
+    backend = registry.get_core()
+    backend.rebuild()
+    for svc in backend.services:
         shell.run(["systemctl", "restart", svc], check=False)

@@ -10,6 +10,8 @@ OUT="${1:-/tmp/vwn-report-$(date +%Y%m%d-%H%M%S).txt}"
 XD="${VWN_XRAY_DIR:-/usr/local/etc/xray}"
 NGX_CONF="${VWN_NGX_CONF:-/etc/nginx/conf.d/xray.conf}"
 XRAY_BIN="${VWN_XRAY_BIN:-/usr/local/bin/xray}"
+MIHOMO_BIN="${VWN_MIHOMO_BIN:-/usr/local/bin/mihomo}"
+MD="${VWN_MIHOMO_DIR:-/usr/local/etc/mihomo}"
 LB_PORT="${VWN_LB_PORT:-8443}"
 GRPC_PORT="${VWN_GRPC_PORT:-50001}"
 XH_PORT="${VWN_XH_PORT:-50002}"
@@ -30,8 +32,9 @@ import hashlib, json, re, sys
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 IPV4 = re.compile(r"\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}\b")
 KEEP_IP = ("127.", "0.0.0.0", "1.1.1.1", "9.9.9.9", "8.8.8.8", "1.0.0.1")
-SECRET_KEYS = {"id", "privateKey", "publicKey", "password", "shortIds", "email", "pbk", "sid",
-               "decryption", "encryption"}
+SECRET_KEYS = {"id", "privateKey", "private_key", "publicKey", "password",
+               "secretKey", "presharedKey", "preSharedKey", "shortIds", "email",
+               "pbk", "sid", "decryption", "encryption"}
 
 
 def tag(p):
@@ -78,6 +81,28 @@ def conf_get(path, key):
     return ""
 
 
+def yaml_get(path, key):
+    try:
+        for line in open(path, encoding="utf-8"):
+            m = re.match(r"\s*" + re.escape(key) + r":\s*\"?([^\"#\n]+)\"?", line)
+            if m:
+                return m.group(1).strip()
+    except OSError:
+        pass
+    return ""
+
+
+def yaml_mask(path):
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        return "не удалось прочитать %s: %s" % (path, e)
+    text = re.sub(r"(?m)^(\s*(?:private-key|decryption|encryption|uuid|password|public-key|short-id)\s*:).*$",
+                  r"\1 <hidden>", text)
+    text = UUID.sub("<uuid>", text)
+    return scrub(text)
+
+
 def inbound_path(path, field, key="path"):
     try:
         ib = json.load(open(path, encoding="utf-8"))["inbounds"][0]
@@ -110,7 +135,8 @@ elif cmd == "nginx":
 elif cmd == "conf":
     allow = ("DOMAIN", "REALITY_MODE", "REALITY_XHTTP_MODE", "XHTTP_MODE", "REALITY_DEST",
              "REALITY_PORT", "DISABLED_PROTOCOLS", "CDN_MODE", "DNS_V4_PRIMARY",
-             "DNS_V4_FALLBACK", "DNS_V6_PRIMARY")
+             "DNS_V4_FALLBACK", "DNS_V6_PRIMARY", "CORE", "MIHOMO_VERSION",
+             "XHTTP_DIRECT")
     try:
         for line in open(sys.argv[2], encoding="utf-8"):
             line = line.rstrip("\n")
@@ -122,6 +148,10 @@ elif cmd == "conf":
         print("нет vwn.conf: %s" % e)
 elif cmd == "get":
     print(conf_get(sys.argv[2], sys.argv[3]))
+elif cmd == "yaml":
+    print(yaml_mask(sys.argv[2]))
+elif cmd == "yamlget":
+    print(yaml_get(sys.argv[2], sys.argv[3]))
 elif cmd == "grpcsvc":
     print(inbound_path(sys.argv[2] + "/grpc.json", "grpcSettings", "serviceName"))
 elif cmd == "xhpath":
@@ -151,9 +181,17 @@ code() {
 }
 
 DOMAIN="$(H get "$XD/vwn.conf" DOMAIN)"
-GRPC_SVC="$(H grpcsvc "$XD")"
-XH_PATH="$(H xhpath "$XD")"
-WS_PATH="$(H inbound_path "$XD/ws.json" wsSettings 2>/dev/null || true)"
+CORE="$(H get "$XD/vwn.conf" CORE)"
+[ -n "$CORE" ] || CORE=xray
+if [ "$CORE" = "mihomo" ]; then
+    GRPC_SVC="$(H yamlget "$MD/grpc/grpc.yaml" grpc-service-name)"
+    XH_PATH="$(H yamlget "$MD/xhttp/xhttp.yaml" path)"
+    WS_PATH="$(H yamlget "$MD/ws/ws.yaml" ws-path)"
+else
+    GRPC_SVC="$(H grpcsvc "$XD")"
+    XH_PATH="$(H xhpath "$XD")"
+    WS_PATH="$(H inbound_path "$XD/ws.json" wsSettings 2>/dev/null || true)"
+fi
 VE="$(H get "$XD/vwn.conf" VLESS_ENCRYPTION)"
 GRPC_NGX="$(H inconf "${GRPC_SVC:+/$GRPC_SVC}" "$NGX_CONF")"
 XH_NGX="$(H inconf "$XH_PATH" "$NGX_CONF")"
@@ -163,6 +201,7 @@ GRPC_HDRS=(-X POST -H 'content-type: application/grpc' --data-binary '')
 
 {
 echo "VWNpy report  $(date -u +%FT%TZ)"
+echo "core: $CORE"
 echo "(секреты замаскированы; сверяйте пути по #хэшу)"
 
 sec "Система"
@@ -185,12 +224,13 @@ run "security modules" sh -c 'command -v getenforce >/dev/null && getenforce; co
 sec "Версии"
 run "vwn" sh -c 'vwn --version 2>&1 | head -1'
 run "xray" sh -c "$XRAY_BIN version 2>&1 | head -2"
+run "mihomo" sh -c "$MIHOMO_BIN -v 2>&1 | head -2"
 run "nginx -v" sh -c 'nginx -v 2>&1'
 run "nginx модули" sh -c 'nginx -V 2>&1 | tr " " "\n" | grep -E "with-http_(ssl|v2|realip)|with-stream|without" | tr "\n" " "; echo'
 run "nginx -t" sh -c 'nginx -t 2>&1'
 
 sec "Сервисы"
-for s in xray-reality xray-grpc xray-xhttp xray-ws nginx; do
+for s in xray-reality xray-grpc xray-xhttp xray-ws mihomo-reality mihomo-grpc mihomo-xhttp mihomo-ws nginx; do
     run "$s" sh -c "echo \"active=\$(systemctl is-active $s 2>&1) enabled=\$(systemctl is-enabled $s 2>&1)\"; systemctl show $s -p NRestarts -p Result -p ExecMainStatus 2>&1 | tr '\n' ' '; echo"
 done
 run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \$4, \$6}"'
@@ -198,10 +238,17 @@ run "слушающие порты" sh -c 'ss -ltnpH 2>/dev/null | awk "{print \
 sec "Конфиг (маскированный)"
 printf '\n--- vwn.conf ---\n'
 H conf "$XD/vwn.conf"
-for f in xray-reality.json grpc.json xhttp.json ws.json; do
-    printf '\n--- %s ---\n' "$f"
-    H json "$XD/$f"
-done
+if [ "$CORE" = "mihomo" ]; then
+    for n in reality grpc xhttp ws; do
+        printf '\n--- mihomo/%s/%s.yaml ---\n' "$n" "$n"
+        H yaml "$MD/$n/$n.yaml"
+    done
+else
+    for f in xray-reality.json grpc.json xhttp.json ws.json; do
+        printf '\n--- %s ---\n' "$f"
+        H json "$XD/$f"
+    done
+fi
 printf '\n--- %s ---\n' "$NGX_CONF"
 H nginx "$NGX_CONF" "$XD"
 echo

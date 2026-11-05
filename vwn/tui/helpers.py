@@ -206,7 +206,8 @@ def remove_domain_flow(tag: str) -> None:
 
 
 def restart_xray_services() -> None:
-    run_cmd("systemctl restart xray-reality xray-grpc xray-xhttp xray-ws")
+    from vwn.cores import registry
+    run_cmd("systemctl restart " + " ".join(registry.get_core().services))
 
 
 def edit_list_in_editor(file_path: str) -> bool:

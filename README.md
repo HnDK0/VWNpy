@@ -19,6 +19,24 @@ sudo bash install.sh --domain your.domain --cert-method standalone --bbr --fail2
 
 После установки сервисы запускаются автоматически. Подписка доступна по `https://your.domain/sub/<label>_<token>.txt`.
 
+## Выбор ядра
+
+Активное ядро хранится в `vwn.conf` (`CORE=xray|mihomo`). По умолчанию — Xray.
+
+```bash
+vwn core status
+vwn core list
+vwn core set mihomo     # staged switch с проверкой и откатом
+vwn core set xray
+vwn core update --version v1.19.33
+vwn core rollback
+```
+
+- **Xray** — полный набор: Reality/XHTTP/gRPC/WS, VLESS Encryption, MPTCP (`sockopt.tcpMptcp`), блокировка BitTorrent.
+- **mihomo** — те же Reality/XHTTP/gRPC/WS и VLESS Encryption; MPTCP только outbound, отдельного правила BitTorrent нет. Ограничения видны в `vwn core status`.
+- Подписки не меняются: `vless://` и mihomo-YAML ядро-независимы.
+- Конфиги ядра — генерируемые артефакты: Xray JSON / mihomo YAML. Источник истины — `vwn.conf` + `users.conf`.
+
 ## Протоколы
 
 | Протокол | Порт | Transport | Сервис |

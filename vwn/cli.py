@@ -11,6 +11,133 @@ from vwn import __version__
 @click.version_option(__version__, prog_name="vwn")
 def cli() -> None:
     """VWNpy — управление Xray-стеком."""
+    from vwn.cores import switch
+
+    try:
+        switch.recover_pending()
+    except Exception as exc:
+        click.echo(f"Восстановление после переключения ядра: {exc}", err=True)
+
+
+@cli.group()
+def core():
+    """Управление ядром: xray или mihomo."""
+
+
+@core.command("status")
+def core_status():
+    """Показать активное ядро, версию и ограничения."""
+    from vwn.core import config
+    from vwn.cores import registry
+
+    backend = registry.get_core()
+    from vwn.cores import versions
+    version = config.vwn_conf_get(
+        "MIHOMO_VERSION" if backend.name == "mihomo" else "XRAY_VERSION"
+    ) or (versions.current_version() if backend.name == "mihomo" else "")
+    click.echo(f"Ядро:       {backend.name}")
+    click.echo(f"Версия:     {version or 'не пиннингована'}")
+    click.echo(f"Бинарь:     {backend.bin} ({'есть' if backend.available() else 'нет'})")
+    click.echo(f"Сервисы:    {', '.join(backend.services)}")
+    click.echo(f"Возможности: {', '.join(sorted(backend.capabilities))}")
+    if "bt-rule" not in backend.capabilities:
+        click.echo("Ограничение: нет правила BitTorrent (риск для публичного сервера)")
+    if "mptcp-in" not in backend.capabilities:
+        click.echo("Ограничение: MPTCP inbound не поддерживается")
+    click.echo("Доступные:  " + ", ".join(registry.CORE_NAMES))
+
+
+@core.command("list")
+def core_list():
+    """Список ядер и статус установки."""
+    from vwn.core import config
+    from vwn.cores import registry
+
+    current = config.core_name()
+    for name, backend in registry.available_cores().items():
+        mark = "*" if name == current else " "
+        state = "установлено" if backend.available() else "не установлено"
+        click.echo(f"{mark} {name:8} {state}")
+
+
+@core.command("set")
+@click.argument("name", type=click.Choice(["xray", "mihomo"]))
+def core_set(name):
+    """Переключить активное ядро (xray/mihomo) с откатом при ошибке."""
+    from vwn.core import config
+    from vwn.cores import registry
+
+    if name == config.core_name():
+        registry.get_core(name).rebuild(refresh_ip=True)
+        click.echo(f"Ядро {name} уже активно; конфиги пересобраны.")
+        return
+    from vwn.cores import switch
+
+    try:
+        switch.switch_to(name)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Активное ядро: {name}.")
+
+
+
+@core.command("rollback")
+def core_rollback():
+    """Откатить бинарь активного ядра на предыдущий."""
+    import os
+    import re
+    import shutil
+    import subprocess
+    from vwn.core import config
+    from vwn.cores import registry, versions
+
+    backend = registry.get_core()
+    if backend.name == "mihomo":
+        version = versions.rollback_mihomo()
+        click.echo(f"mihomo откатан на {version}")
+    else:
+        old = backend.bin + ".old"
+        if not os.path.isfile(old):
+            raise click.ClickException("xray.old не найден — откатывать нечего")
+        shutil.copy2(old, backend.bin)
+        os.chmod(backend.bin, 0o755)
+        r = subprocess.run([backend.bin, "version"], capture_output=True, text=True)
+        match = re.search(r"Xray\s+v?([0-9][^\s]*)", r.stdout + r.stderr)
+        if match:
+            config.vwn_conf_set("XRAY_VERSION", match.group(1))
+        click.echo("Xray откатан на предыдущий бинарь")
+    for svc in registry.active_services(backend):
+        subprocess.run(["systemctl", "restart", svc], check=False)
+
+
+@core.command("recover")
+def core_recover():
+    """Завершить прерванный switch ядра (используется guard-юнитом)."""
+    from vwn.cores import switch
+
+    switch.recover_pending()
+    click.echo("Состояние ядра проверено.")
+
+
+@core.command("update")
+@click.option("--version", default=None, help="Версия для установки")
+@click.option("--check", is_flag=True, help="Только проверить доступную версию")
+def core_update(version, check):
+    """Обновить/установить активное ядро."""
+    from vwn.cores import registry
+
+    backend = registry.get_core()
+    if check:
+        if backend.name == "mihomo":
+            from vwn.cores import versions
+            click.echo(f"Установлена: {versions.current_version()}")
+            click.echo(f"Latest:      {versions.latest_version()}")
+        else:
+            from vwn.core import config
+            click.echo(f"Установлена: {config.vwn_conf_get('XRAY_VERSION') or 'неизвестна'}")
+        return
+    backend.install(version)
+    click.echo(f"Ядро {backend.name} установлено.")
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
@@ -120,7 +247,11 @@ def qr(type):
             return
         url = sub.generate_grpc_url(uuid, connect_host, 443, grpc_service, domain, get_config_name("gRPC", label), mode=grpc_mode, vless_encryption=enc)
     elif type == "xhttp":
-        url = sub.generate_xhttp_url(uuid, domain, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False), vless_encryption=enc)
+        if not sub.xhttp_direct_enabled():
+            raise click.ClickException(
+                "XHTTP direct скрыт (XHTTP_DIRECT=off) — используйте --type xhttp-cdn"
+            )
+        url = sub.generate_xhttp_url(uuid, server_ip, 443, xhttp_path or "/xhttp", domain, get_config_name("XHTTP", label), mode=xhttp_mode, extra_json=sub._xhttp_client_extra_json(cdn=False), vless_encryption=enc)
     elif type == "xhttp-cdn":
         from vwn.core import config as _c
         connect_host = domain
@@ -172,12 +303,15 @@ def provision(domain, stub, xhttp_mode):
     SNI Reality всегда равен домену (self-steal); отдельный reality-dest
     больше не используется.
     """
-    from vwn.modules.xray import provision_configs
-    params = provision_configs(domain, stub, xhttp_mode=xhttp_mode,
-                              vless_encryption=None)
+    from vwn.core import config as vwn_cfg
+    from vwn.install import InstallOptions, _provision_core
+    _provision_core(InstallOptions(
+        domain=domain, stub=stub, core=vwn_cfg.core_name(),
+        xhttp_mode=xhttp_mode, preserve_existing=True,
+    ))
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
-    click.echo(f"Конфиги записаны. UUID={params['uuid']}")
+    click.echo("Конфиги записаны.")
 
 
 @cli.command()
@@ -189,19 +323,17 @@ def rebuild():
     """
     import subprocess
     from vwn.core import config
-    from vwn.modules.xray import legacy_ws_present, rebuild_configs
-    was_ws = legacy_ws_present()
+    from vwn.cores import registry
+    from vwn.modules.xray import legacy_ws_present
+    backend = registry.get_core()
+    was_ws = legacy_ws_present() if backend.name == "xray" else False
     try:
-        rebuild_configs(refresh_ip=True)
+        backend.rebuild(refresh_ip=True)
     except RuntimeError as exc:
         click.echo(f"Ошибка: {exc}", err=True)
         sys.exit(1)
     subprocess.run(["systemctl", "daemon-reload"], check=False)
-    from vwn.modules.sub import get_disabled_protocols
-    disabled = get_disabled_protocols()
-    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
-        if svc in config.XRAY_SERVICES and svc.removeprefix("xray-") in disabled:
-            continue
+    for svc in list(registry.active_services(backend)) + [config.NGINX_SERVICE]:
         subprocess.run(["systemctl", "restart", svc], check=False)
     click.echo("Конфиги пересобраны." + (" Переход WS → gRPC выполнен; "
                "новые ссылки — в подписках (старые WS-ссылки перестали работать)."
@@ -219,6 +351,30 @@ def sub_rebuild():
     from vwn.modules.sub import rebuild_all_sub_files, SUB_DIR
     count = rebuild_all_sub_files(refresh_ip=True)
     click.echo(f"Подписки пересобраны: {count} пользователей в {SUB_DIR}")
+
+
+@sub.command(name="xhttp-direct")
+@click.argument("action", type=click.Choice(["on", "off"]))
+def sub_xhttp_direct(action):
+    """Публиковать ли direct-XHTTP (без CDN) в подписках."""
+    from pathlib import Path
+    from vwn.core import config as vwn_cfg
+    from vwn.modules import sub as sub_mod
+
+    if action == "off":
+        domain = vwn_cfg.vwn_conf_get("DOMAIN") or ""
+        connect_host = ""
+        try:
+            connect_host = Path(vwn_cfg.connect_host_file_path()).read_text().strip()
+        except OSError:
+            pass
+        if not connect_host or connect_host == domain:
+            raise click.ClickException(
+                "CDN не включён: выключение direct-XHTTP оставит подписку без XHTTP"
+            )
+    vwn_cfg.vwn_conf_set("XHTTP_DIRECT", action)
+    sub_mod.rebuild_all_sub_files()
+    click.echo(f"XHTTP direct: {action}")
 
 
 @cli.command()
@@ -294,10 +450,12 @@ def backup():
     import os, subprocess, time
     backup_dir = "/root/vwn_backups"
     paths = [
-        "/usr/local/etc/xray", "/etc/nginx/conf.d", "/etc/nginx/cert",
-        "/etc/cron.d/acme-renew", "/etc/cron.d/clear-logs",
+        "/usr/local/etc/xray", "/usr/local/etc/mihomo", "/etc/nginx/conf.d",
+        "/etc/nginx/cert", "/etc/cron.d/acme-renew", "/etc/cron.d/clear-logs",
         "/etc/fail2ban/jail.local", "/etc/fail2ban/filter.d/nginx-probe.conf",
-        "/etc/systemd/system/xray-*.service", "/root/.cloudflare_api",
+        "/etc/systemd/system/xray-*.service", "/etc/systemd/system/mihomo-*.service",
+        "/usr/local/bin/xray", "/usr/local/bin/mihomo", "/usr/local/bin/mihomo.prev",
+        "/root/.cloudflare_api",
     ]
     exist = [p for p in paths if os.path.exists(p)]
     if not exist:
@@ -337,13 +495,17 @@ def restore(file):
     else:
         fname = files[0]
         click.echo(f"Использую последний: {fname}")
-    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    from vwn.cores import registry
+    for svc in list(registry.get_core().services) + [config.NGINX_SERVICE]:
         subprocess.run(["systemctl", "stop", svc], capture_output=True)
     r = subprocess.run(["tar", "-xzf", os.path.join(backup_dir, fname), "-C", "/"],
                        capture_output=True, text=True)
     if r.returncode == 0:
         subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
-        for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+        warning = registry.sanitize()
+        if warning:
+            click.echo(warning)
+        for svc in list(registry.get_core().services) + [config.NGINX_SERVICE]:
             subprocess.run(["systemctl", "restart", svc], capture_output=True)
         click.echo("Восстановлено.")
     else:

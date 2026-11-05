@@ -25,6 +25,7 @@ def clear() -> dict:
             total_before += os.path.getsize(f)
             with open(f, "w"):
                 pass
+    shell.run(["journalctl", "--rotate"], check=False)
     shell.run(["journalctl", "--vacuum-size=50M"], check=False)
     shell.run(["journalctl", "--vacuum-time=7d"], check=False)
     total_after = 0

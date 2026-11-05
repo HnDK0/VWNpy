@@ -20,6 +20,21 @@ def _xray_configs() -> list[str]:
             if os.path.isfile(os.path.join(d, f))]
 
 
+def _mihomo_set_log(level: str) -> None:
+    config.vwn_conf_set("MIHOMO_LOG_LEVEL", level)
+    from vwn.cores import registry
+    try:
+        if registry.get_core().name == "mihomo":
+            registry.get_core("mihomo").refresh()
+    except Exception:
+        pass
+
+
+def _services() -> tuple[str, ...]:
+    from vwn.cores import registry
+    return registry.get_core().services
+
+
 def _set_xray_log_level(cfg: str, access: str, level: str) -> None:
     if not os.path.isfile(cfg):
         return
@@ -155,16 +170,17 @@ def enable() -> None:
     if status()["enabled"]:
         return
     _xray_disable_log()
+    _mihomo_set_log("silent")
     _nginx_set_access_log("off")
     try:
         from vwn.modules.security import webjail_disable
         webjail_disable()
     except Exception as exc:
         logging.debug("webjail_disable during privacy enable failed: %s", exc)
-    for svc in config.XRAY_SERVICES:
+    for svc in _services():
         _systemd_output(svc, "disable")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    for svc in config.XRAY_SERVICES:
+    for svc in _services():
         shell.run(["systemctl", "restart", svc], check=False)
     _enable_tmpfs()
     _shred_logs()
@@ -175,14 +191,15 @@ def disable() -> None:
     if not status()["enabled"]:
         return
     _xray_restore_log()
+    _mihomo_set_log("warning")
     _nginx_set_access_log("on")
-    for svc in config.XRAY_SERVICES:
+    for svc in _services():
         _systemd_output(svc, "restore")
     shell.run(["systemctl", "daemon-reload"], check=False)
-    for svc in config.XRAY_SERVICES:
+    for svc in _services():
         shell.run(["systemctl", "stop", svc], check=False)
     _disable_tmpfs()
-    for svc in config.XRAY_SERVICES:
+    for svc in _services():
         shell.run(["systemctl", "start", svc], check=False)
     config.vwn_conf_set(_PRIVACY_FLAG, "0")
 

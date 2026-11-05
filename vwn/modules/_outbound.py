@@ -7,8 +7,12 @@ from vwn.core import config
 
 
 def _paths() -> list[str]:
-    return [os.path.join(config.XRAY_DIR, p)
-            for p in config.XRAY_CONFIG_FILES]
+    paths = [os.path.join(config.XRAY_DIR, p)
+             for p in config.XRAY_CONFIG_FILES]
+    if config.core_name() == "mihomo" and not any(os.path.isfile(p) for p in paths):
+        from vwn.core import tunnel_state
+        return [tunnel_state.runtime_path()]
+    return paths
 
 
 def add_outbound(tag: str, protocol: str, port: int) -> None:
@@ -26,6 +30,8 @@ def add_outbound(tag: str, protocol: str, port: int) -> None:
         obs.insert(-1, outbound)
         with open(path, "w") as f:
             _j.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def remove_outbound(tag: str) -> None:
@@ -42,3 +48,5 @@ def remove_outbound(tag: str) -> None:
                                    if r.get("outboundTag") != tag]
         with open(path, "w") as f:
             _j.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()

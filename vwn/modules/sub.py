@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import string
+import sys
 from pathlib import Path
 
 from vwn.core import config, render
@@ -223,8 +224,8 @@ def build_mihomo_proxies(
             },
         })
 
-    # XHTTP direct всегда
-    if xhttp_path and "xhttp" not in disabled:
+    # XHTTP direct (можно скрыть при включённом CDN)
+    if xhttp_path and "xhttp" not in disabled and xhttp_direct_enabled():
         proxies.append({
             "name": users.get_config_name("XHTTP", label),
             "type": "vless",
@@ -632,6 +633,11 @@ def get_disabled_protocols() -> set[str]:
     return {p.strip() for p in raw.split(",") if p.strip()}
 
 
+def xhttp_direct_enabled() -> bool:
+    """Публиковать ли direct-XHTTP в подписках (по умолчанию да)."""
+    return (config.vwn_conf_get("XHTTP_DIRECT") or "on").lower() != "off"
+
+
 def build_user_sub_file(
     uuid_val: str,
     label: str,
@@ -679,8 +685,8 @@ def build_user_sub_file(
             mode=grpc_mode, vless_encryption=enc,
         ))
 
-    # XHTTP direct всегда
-    if xhttp_path and "xhttp" not in disabled:
+    # XHTTP direct (можно скрыть при включённом CDN)
+    if xhttp_path and "xhttp" not in disabled and xhttp_direct_enabled():
         name_xhttp = users.get_config_name("XHTTP", label)
         lines.append(generate_xhttp_url(
             uuid_val, server_ip, 443, xhttp_path, domain, name_xhttp,
@@ -792,10 +798,12 @@ def rebuild_all_sub_files(
             pass
         users.get_cached_flag(force_refresh=True)
     if not domain or not server_ip:
+        print("Подписки не пересобраны: нет DOMAIN или SERVER_IP", file=sys.stderr)
         return 0
 
     users.init_users_file()
     if not os.path.isfile(users.USERS_FILE):
+        print("Подписки не пересобраны: нет users.conf", file=sys.stderr)
         return 0
 
     write_sub_map(config.NGINX_CONF_DIR)
@@ -805,6 +813,8 @@ def rebuild_all_sub_files(
                             domain, server_ip,
                             output_dir=output_dir, template_dir=template_dir)
         count += 1
+    if count == 0:
+        print("Подписки не пересобраны: нет пользователей", file=sys.stderr)
     return count
 
 

@@ -76,6 +76,8 @@ def reapply_routing() -> None:
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def status() -> dict:
@@ -88,9 +90,8 @@ def status() -> dict:
 
 def _apply_outbound(ob: dict) -> None:
     import os as _os
-    from vwn.core import config as _cfg
-    for path in [_os.path.join(_cfg.XRAY_DIR, p)
-                 for p in _cfg.XRAY_CONFIG_FILES]:
+    from vwn.modules._outbound import _paths
+    for path in _paths():
         if not _os.path.isfile(path):
             continue
         with open(path) as f:
@@ -101,6 +102,8 @@ def _apply_outbound(ob: dict) -> None:
         xcfg["outbounds"] = obs
         with open(path, "w") as f:
             json.dump(xcfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def _save_config(data: dict) -> None:

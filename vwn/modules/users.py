@@ -149,19 +149,33 @@ def get_active_modes_suffix() -> str:
     suffix = ""
     grpc_cfg = _read_json(os.path.join(config.XRAY_DIR, "grpc.json"))
     if grpc_cfg is None:
-        return ""
-    rules = grpc_cfg.get("routing", {}).get("rules", [])
+        if config.core_name() != "mihomo":
+            return ""
+        from vwn.cores import mihomo_tunnels
+        _, mrules, _ = mihomo_tunnels.state()
+        tags = [r.split(",", 1)[1] for r in mrules if r.startswith("MATCH,")]
 
-    def is_global(tag: str) -> bool:
-        for r in rules:
-            otag = r.get("outboundTag", "")
-            if tag == "warp":
-                match = otag.startswith("warp-") or otag == "warp"
-            else:
-                match = otag == tag
-            if match and not r.get("inboundTag") and r.get("port") == "0-65535":
-                return True
-        return False
+        def is_global(tag: str) -> bool:
+            for otag in tags:
+                if tag == "warp":
+                    if otag.startswith("warp-") or otag == "warp":
+                        return True
+                elif otag == tag:
+                    return True
+            return False
+    else:
+        rules = grpc_cfg.get("routing", {}).get("rules", [])
+
+        def is_global(tag: str) -> bool:
+            for r in rules:
+                otag = r.get("outboundTag", "")
+                if tag == "warp":
+                    match = otag.startswith("warp-") or otag == "warp"
+                else:
+                    match = otag == tag
+                if match and not r.get("inboundTag") and r.get("port") == "0-65535":
+                    return True
+            return False
 
     warp_g = is_global("warp")
     psiphon_g = is_global("psiphon")
@@ -366,6 +380,11 @@ def reissue_token(line_no: int) -> str | None:
 def apply_users_to_configs() -> None:
     users_list = list_users()
     if not users_list:
+        return
+    from vwn.cores import registry
+    backend = registry.get_core()
+    if backend.name != "xray":
+        backend.apply_users(users_list)
         return
     reality_mode = config.vwn_conf_get("REALITY_MODE") or "tcp"
     if reality_mode == "xhttp":

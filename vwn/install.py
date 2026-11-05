@@ -36,6 +36,11 @@ class InstallOptions:
     psiphon: bool = False
     psiphon_country: str = ""
     psiphon_warp: bool = False
+    core: str = "xray"
+    xhttp_mode: str = "auto"
+    reality_mode: str | None = None
+    vless_encryption: bool | None = None
+    preserve_existing: bool = False
 
     unknown: List[str] = field(default_factory=list)
 
@@ -45,6 +50,7 @@ _VALUE_FLAGS = {
     "--reality-port": "reality_port",
     "--cert-method": "cert_method", "--cf-email": "cf_email", "--cf-key": "cf_key",
     "--ssh-port": "ssh_port", "--psiphon-country": "psiphon_country",
+    "--core": "core",
 }
 
 _BOOL_FLAGS = {
@@ -102,6 +108,8 @@ def validate_auto_options(opts: InstallOptions) -> None:
 
     if opts.psiphon_warp and opts.no_warp:
         raise ValueError("--psiphon-warp несовместим с --no-warp")
+    if opts.core not in ("xray", "mihomo"):
+        raise ValueError("--core: допустимо 'xray' или 'mihomo'")
 
 
 def _setup_ufw(ufw_allow) -> None:
@@ -115,6 +123,94 @@ def _enable_start(service: str) -> None:
     shell.run(["systemctl", "daemon-reload"], check=False)
     shell.run(["systemctl", "enable", service], check=True)
     shell.run(["systemctl", "restart", service], check=True)
+
+
+
+def _vless_arg(opts: "InstallOptions") -> "bool | None":
+    if opts.preserve_existing and opts.vless_encryption is None:
+        return None
+    if opts.vless_encryption is not None:
+        return opts.vless_encryption
+    return not opts.no_vless_enc
+
+
+def _provision_core(opts: "InstallOptions") -> None:
+    """Сгенерировать конфиги выбранного ядра."""
+    if opts.core == "xray":
+        xray.provision_configs(
+            opts.domain, opts.stub,
+            reality_port=opts.reality_port,
+            xhttp_mode=opts.xhttp_mode,
+            vless_encryption=_vless_arg(opts),
+            reality_mode=opts.reality_mode,
+        )
+        config.vwn_conf_set("CORE", "xray")
+        return
+
+    from vwn.cores import keystore, registry
+    from vwn.cores.base import ProvisionParams
+
+    backend = registry.get_core("mihomo")
+    private_key, public_key = backend.generate_reality_keypair()
+    if opts.preserve_existing:
+        decryption = keystore.vless_decryption()
+        encryption = keystore.vless_encryption()
+        if decryption == "none":
+            encryption = ""
+    elif opts.no_vless_enc:
+        decryption, encryption = "none", ""
+    else:
+        decryption, encryption = backend.generate_vless_keypair()
+
+    reality_mode = opts.reality_mode or config.vwn_conf_get("REALITY_MODE") or "xhttp"
+    uuid_ = xray.generate_uuid()
+    grpc_service = system.generate_grpc_service()
+    xhttp_path = "/" + system.generate_random_path().strip("/")
+    ws_path = "/" + system.generate_random_path().strip("/")
+    short_id = xray.generate_short_id()
+
+    config.vwn_conf_set("DOMAIN", opts.domain)
+    config.vwn_conf_set("STUB_URL", opts.stub)
+    config.vwn_conf_set("UUID", uuid_)
+    config.vwn_conf_set("GRPC_SERVICE", grpc_service)
+    config.vwn_conf_set("XHTTP_PATH", xhttp_path)
+    config.vwn_conf_set("WS_PATH", ws_path)
+    config.vwn_conf_set("REALITY_DEST", f"{opts.domain}:443")
+    config.vwn_conf_set("REALITY_PORT", str(opts.reality_port))
+    config.vwn_conf_set("REALITY_MODE", reality_mode)
+    config.vwn_conf_set("REALITY_XHTTP_PATH", xhttp_path)
+    config.vwn_conf_set("REALITY_XHTTP_MODE", "auto")
+    config.vwn_conf_set("XHTTP_MODE", opts.xhttp_mode)
+    config.vwn_conf_set("REALITY_PUBKEY", public_key)
+    config.vwn_conf_set("SHORT_ID", short_id)
+    config.vwn_conf_set("VLESS_DECRYPTION", decryption)
+    if encryption:
+        config.vwn_conf_set("VLESS_ENCRYPTION", encryption)
+    else:
+        config.vwn_conf_del("VLESS_ENCRYPTION")
+    keystore.set("REALITY_PRIVKEY", private_key, overwrite=True)
+    keystore.set("REALITY_PUBKEY", public_key, overwrite=True)
+    keystore.set("SHORT_ID", short_id, overwrite=True)
+    keystore.set("VLESS_DECRYPTION", decryption, overwrite=True)
+    keystore.set("VLESS_ENCRYPTION", encryption, overwrite=True)
+
+    params = ProvisionParams(
+        domain=opts.domain,
+        stub=opts.stub,
+        uuid=uuid_,
+        grpc_service=grpc_service,
+        xhttp_path=xhttp_path,
+        ws_path=ws_path,
+        short_id=short_id,
+        private_key=private_key,
+        reality_mode=reality_mode,
+        reality_port=opts.reality_port,
+        fallback_port=config.NGINX_LOOPBACK_PORT,
+        decryption=decryption,
+        vless_encryption=_vless_arg(opts),
+    )
+    backend.provision(params)
+    config.vwn_conf_set("CORE", "mihomo")
 
 
 def run_install(argv: "list | None" = None) -> None:
@@ -143,7 +239,11 @@ def run_install(argv: "list | None" = None) -> None:
     shell.run_task("Установка nginx 1.30+ (из исходников)",
                    system.install_nginx)
 
-    shell.run_task("Установка Xray-core", system.install_xray)
+    if opts.core == "mihomo":
+        from vwn.cores import registry
+        shell.run_task("Установка mihomo", lambda: registry.get_core("mihomo").install())
+    else:
+        shell.run_task("Установка Xray-core", system.install_xray)
 
     from vwn.modules.security import ufw_allow
     from vwn.modules.security import _parse_ssh_port, change_ssh_port
@@ -189,12 +289,7 @@ def run_install(argv: "list | None" = None) -> None:
     # ── Конфиги + сертификат + юниты + старт ──────────────────────────
     shell.run_task(
         "Генерация конфигов (Reality/gRPC/XHTTP + loopback-nginx + unit-файлы)",
-        lambda: xray.provision_configs(
-            opts.domain, opts.stub,
-            reality_port=opts.reality_port,
-            vless_encryption=not opts.no_vless_enc,
-            reality_mode="xhttp",
-        ),
+        lambda: _provision_core(opts),
     )
 
     shell.run_task(
@@ -218,7 +313,9 @@ def run_install(argv: "list | None" = None) -> None:
 
     shell.run_task("Проверка и перезагрузка nginx", shell.nginx_reload)
 
-    for svc in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    from vwn.cores import registry
+    core_services = list(registry.active_services(registry.get_core(opts.core)))
+    for svc in core_services + [config.NGINX_SERVICE]:
         shell.run_task(f"Включение и старт {svc}",
                        lambda s=svc: _enable_start(s))
 

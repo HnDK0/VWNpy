@@ -294,12 +294,12 @@ def _install_geo_databases() -> None:
                    "-o", MMDB_FILE], check=False)
 
 
-def install_xray() -> None:
+def install_xray(version: "str | None" = None) -> None:
     """Поставить/обновить бинарь Xray-core + geo-базы.
 
     Бинарь качается и перезаписывается всегда — и при первой установке,
     и при обновлении (раньше при наличии xray пропускали, из-за чего
-    `vwn update-xray` ничего не делал).
+    `vwn update-xray` ничего не делал). version=None — latest.
     """
     _create_xray_user()
     # Остановить работающие экземпляры перед заменой бинаря (иначе ETXTBSY)
@@ -312,8 +312,9 @@ def install_xray() -> None:
         shell.die(f"Неподдерживаемая архитектура: {platform.machine()}")
     tmp = tempfile.mkdtemp(prefix="xray-")
     try:
-        zip_url = (f"https://github.com/XTLS/Xray-core/releases/latest/"
-                   f"download/Xray-linux-{tag}.zip")
+        release = f"download/{version}" if version else "latest/download"
+        zip_url = (f"https://github.com/XTLS/Xray-core/releases/{release}/"
+                   f"Xray-linux-{tag}.zip")
         zip_path = os.path.join(tmp, "xray.zip")
         shell.run(["curl", "-fL", "--connect-timeout", "30", "--retry", "2",
                    zip_url, "-o", zip_path], check=True)
@@ -334,15 +335,15 @@ def install_xray() -> None:
             pass
         shutil.copy(bin_src, config.XRAY_BIN)
         os.chmod(config.XRAY_BIN, 0o755)
-        try:
-            if os.path.exists(_old_bin):
-                os.remove(_old_bin)
-        except OSError:
-            pass
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if not shutil.which("xray"):
         shell.die("xray не установился")
+    r = shell.run([config.XRAY_BIN, "version"], capture=True, check=False, timeout=10)
+    match = re.search(r"Xray\s+v?([0-9][^\s]*)", (r.stdout or "") + (r.stderr or ""))
+    installed = version or (match.group(1) if match else "")
+    if installed:
+        config.vwn_conf_set("XRAY_VERSION", installed)
     # Перезапустить юниты, чтобы подхватить новый бинарь
     for _svc in config.XRAY_SERVICES:
         if os.path.isfile(os.path.join(config.SYSTEMD_DIR, _svc + ".service")):

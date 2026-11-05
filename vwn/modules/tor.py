@@ -88,6 +88,9 @@ def install(country: str = "") -> None:
             break
         time.sleep(2)
     add_outbound(TAG, "socks", PORT)
+    from vwn.cores.refresh import after_xray_config_change
+    if after_xray_config_change():
+        return
     for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 
@@ -109,6 +112,9 @@ def remove() -> None:
     if os.path.isfile(DOMAINS_FILE):
         os.remove(DOMAINS_FILE)
     _runcmd(["apt-get", "remove", "-y", "tor"], timeout=60, check=False)
+    from vwn.cores.refresh import after_xray_config_change
+    if after_xray_config_change():
+        return
     for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 
@@ -262,6 +268,9 @@ def _apply_domains() -> None:
                 r.pop("port", None)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    if after_xray_config_change():
+        return
     for svc in config.XRAY_SERVICES:
         _runcmd(["systemctl", "restart", svc], check=False)
 

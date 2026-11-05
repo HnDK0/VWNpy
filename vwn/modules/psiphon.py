@@ -248,6 +248,8 @@ def reapply_routing() -> None:
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def status() -> dict:

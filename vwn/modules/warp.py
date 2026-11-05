@@ -62,12 +62,8 @@ def _is_warp_routing(rule: dict) -> bool:
 
 
 def _xray_config_paths() -> list[str]:
-    paths = []
-    for p in config.XRAY_CONFIG_FILES:
-        fp = os.path.join(config.XRAY_DIR, p)
-        if os.path.exists(fp):
-            paths.append(fp)
-    return paths
+    from vwn.modules._outbound import _paths
+    return [p for p in _paths() if os.path.exists(p)]
 
 
 def _remove_outbound(method: str = "") -> None:
@@ -89,6 +85,8 @@ def _remove_outbound(method: str = "") -> None:
         ]
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def _add_routing_rule_if_missing(tag: str, mode: str = "Global") -> None:
@@ -113,6 +111,8 @@ def _add_routing_rule_if_missing(tag: str, mode: str = "Global") -> None:
         cfg["routing"]["rules"] = rules
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 # ── Method A: native (wgcf → Xray WireGuard) ──────────────────────
@@ -261,6 +261,8 @@ def _apply_native_outbound(private_key: str, ipv4: str, endpoint: str) -> None:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     if paths:
         _apply_socks_inbound(paths[0], 10808, tag)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def install_native() -> None:
@@ -573,6 +575,8 @@ def _apply_amnezia_outbound() -> None:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     if paths:
         _apply_socks_inbound(paths[0], 10809, tag)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def _download_amneziawg_go() -> None:
@@ -699,6 +703,8 @@ def _apply_warp_svc_outbound() -> None:
         cfg["outbounds"].append(outbound)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
 
 
 def install_warp_svc() -> None:

@@ -579,6 +579,9 @@ def set_mode(new_mode: str) -> None:
     else:
         remove_watcher()
     if new_mode == "off":
+        if (config.vwn_conf_get("XHTTP_DIRECT") or "on").lower() == "off":
+            config.vwn_conf_set("XHTTP_DIRECT", "on")
+            print("  XHTTP direct снова включён (CDN выключен)")
         for f in [_connect_host_file(), ACTIVE_IP_FILE, BETTER_COUNT_FILE,
                   f"{BETTER_COUNT_FILE}.ip"]:
             Path(f).unlink(missing_ok=True)

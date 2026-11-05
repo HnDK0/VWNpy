@@ -25,6 +25,21 @@ def test_generate_uuid_format():
     assert _uuid.UUID(xray.generate_uuid())
 
 
+def test_nginx_omits_disabled_grpc_xhttp(paths):
+    params = xray.provision_configs(
+        "vpn.example.com", "https://www.openstreetmap.org/",
+        "microsoft.com:443", private_key="PRIV",
+    )
+    config.vwn_conf_set("DISABLED_PROTOCOLS", "grpc,xhttp")
+    xray._re_render_nginx()
+    ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert f"location ^~ /{params['grpc_service']} {{" not in ng
+    assert f"location ^~ {params['xhttp_path']} {{" not in ng
+    assert "grpc_pass grpc://127.0.0.1:50001" not in ng
+    assert "grpc_pass grpc://127.0.0.1:50002" not in ng
+    assert "proxy_pass https://www.openstreetmap.org/" in ng
+
+
 def test_reality_config_shape(monkeypatch):
     monkeypatch.setattr(xray, "_bbr_available", lambda: True)
     monkeypatch.setattr(xray, "_tfo_server_ok", lambda: True)
@@ -111,6 +126,7 @@ def test_provision_writes_valid_configs(paths):
     assert xc["inbounds"][0]["port"] == 50002
 
     ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
+    assert "__GRPC_LOCATION__" not in ng and "__XHTTP_LOCATION__" not in ng
     assert "127.0.0.1:8443" in ng                          # nginx loopback (через Reality fallback)
     assert "log_format main_safe" in ng                  # иначе nginx -t падает
     # gRPC: grpc_pass (h2c) на префикс serviceName БЕЗ хвостового "/" (иначе 301

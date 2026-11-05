@@ -430,18 +430,27 @@ def _append_if_missing(path: str, text: str) -> None:
 
 # ── CPU Guard (systemd cgroup priority) ─────────────────────────────
 
-_CPU_GUARD_SVCS = [f"{s}.service" for s in config.XRAY_SERVICES] + [f"{config.NGINX_SERVICE}.service"]
+def _cpu_guard_units() -> list[str]:
+    from vwn.cores import registry
+    return list(registry.get_core().services) + [config.NGINX_SERVICE]
+
+
+def _cpu_guard_services() -> list[str]:
+    return [f"{s}.service" for s in _cpu_guard_units()]
 
 
 def cpu_guard_status() -> bool:
-    return os.path.isfile("/etc/systemd/system/xray-reality.service.d/cpuguard.conf")
+    return any(
+        os.path.isfile(f"/etc/systemd/system/{s}.service.d/cpuguard.conf")
+        for s in _cpu_guard_units()
+    )
 
 
 def cpu_guard_enable() -> None:
-    for svc in _CPU_GUARD_SVCS:
+    for svc in _cpu_guard_services():
         shell.run(["systemctl", "set-property", svc, "CPUWeight=200"], check=False)
     shell.run(["systemctl", "set-property", "user.slice", "CPUWeight=20"], check=False)
-    for svc_name in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    for svc_name in _cpu_guard_units():
         drop_in = f"/etc/systemd/system/{svc_name}.service.d"
         os.makedirs(drop_in, exist_ok=True)
         with open(os.path.join(drop_in, "cpuguard.conf"), "w") as f:
@@ -453,7 +462,7 @@ def cpu_guard_enable() -> None:
 
 
 def cpu_guard_disable() -> None:
-    for svc_name in list(config.XRAY_SERVICES) + [config.NGINX_SERVICE]:
+    for svc_name in _cpu_guard_units():
         p = f"/etc/systemd/system/{svc_name}.service.d/cpuguard.conf"
         if os.path.isfile(p):
             os.remove(p)
@@ -470,5 +479,5 @@ def cpu_guard_disable() -> None:
         pass
     shell.run(["systemctl", "daemon-reload"], check=False)
     shell.run(["systemctl", "set-property", "user.slice", "CPUWeight=100"], check=False)
-    for svc in _CPU_GUARD_SVCS:
+    for svc in _cpu_guard_services():
         shell.run(["systemctl", "set-property", svc, "CPUWeight=100"], check=False)

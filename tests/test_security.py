@@ -59,6 +59,33 @@ def test_bbr_enable_sets_params(monkeypatch, tmp_path):
     assert any("bbr" in str(c) for c in sysctl_w)
 
 
+def test_mihomo_log_level_is_persisted(monkeypatch):
+    from vwn.modules import privacy
+
+    values = {}
+    monkeypatch.setattr(privacy.config, "vwn_conf_set",
+                        lambda k, v: values.__setitem__(k, v))
+
+    class B:
+        name = "xray"
+    from vwn.cores import registry
+    monkeypatch.setattr(registry, "get_core", lambda name=None: B())
+    privacy._mihomo_set_log("silent")
+    assert values["MIHOMO_LOG_LEVEL"] == "silent"
+
+
+def test_cpu_guard_unit_names_are_not_doubled(monkeypatch):
+    from vwn.cores import registry
+
+    class B:
+        services = ("xray-reality", "xray-grpc")
+    monkeypatch.setattr(registry, "get_core", lambda name=None: B())
+    assert security._cpu_guard_units() == ["xray-reality", "xray-grpc", "nginx"]
+    assert security._cpu_guard_services() == [
+        "xray-reality.service", "xray-grpc.service", "nginx.service",
+    ]
+
+
 # ── Fail2Ban ───────────────────────────────────────────────────────
 
 def test_fail2ban_install_already_active(monkeypatch):

@@ -1,3 +1,5 @@
+import os
+
 import vwn.core.config as config
 from vwn.core.validate import (validate_port, validate_domain, validate_url,
                                validate_grpc_service)
@@ -96,6 +98,15 @@ def test_config_crud(tmp_path, monkeypatch):
     assert config.vwn_conf_get("DOMAIN") == "new.example.com"
     config.vwn_conf_del("DOMAIN")
     assert config.vwn_conf_get("DOMAIN") is None
+
+
+def test_config_stays_0600_after_delete(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path))
+    config.vwn_conf_set("DOMAIN", "vpn.example.com")
+    config.vwn_conf_set("UUID", "u")
+    config.vwn_conf_del("UUID")
+    mode = os.stat(tmp_path / "vwn.conf").st_mode & 0o777
+    assert mode == 0o600 or os.name == "nt"
 
 
 def test_config_b64_roundtrip(tmp_path, monkeypatch):

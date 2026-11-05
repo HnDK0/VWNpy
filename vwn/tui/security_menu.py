@@ -16,7 +16,8 @@ def _dns_menu() -> None:
         # сбросить кэш резолвера (systemd-resolved)
         shell.run(["resolvectl", "flush-caches"], check=False)
         shell.run(["systemd-resolve", "--flush-caches"], check=False)
-        shell.run(["systemctl", "restart"] + list(config.XRAY_SERVICES), check=False)
+        from vwn.cores import registry
+        shell.run(["systemctl", "restart"] + list(registry.get_core().services), check=False)
 
     while True:
         st = dns_status()

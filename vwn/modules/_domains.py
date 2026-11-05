@@ -107,5 +107,8 @@ def _apply(tag: str, routing_tag: str | None = None) -> None:
                     r.pop("port", None)
         with open(path, "w") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+    from vwn.cores.refresh import after_xray_config_change
+    if after_xray_config_change():
+        return
     for svc in config.XRAY_SERVICES:
         shell.run(["systemctl", "restart", svc], timeout=30, check=False)
