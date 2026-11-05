@@ -494,6 +494,7 @@ class MihomoBackend:
                 shell.run(["systemctl", "restart", svc], check=False)
 
     def rebuild(self, refresh_ip: bool = False) -> None:
+        keystore.repair_reality_pubkey()
         self.refresh()
         self.write_units(include_ws=True)
         from vwn.modules import sub

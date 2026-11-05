@@ -48,6 +48,15 @@ def test_keystore_migrates_private_key(tmp_path, monkeypatch):
     assert config.vwn_conf_get("REALITY_PRIVKEY") == "from-json"
 
 
+def test_repair_reality_pubkey(monkeypatch):
+    config.vwn_conf_set("REALITY_PRIVKEY", "priv")
+    config.vwn_conf_set("REALITY_PUBKEY", "old")
+    monkeypatch.setattr("vwn.modules.xray.derive_reality_public",
+                        lambda priv: "new")
+    assert keystore.repair_reality_pubkey() == "new"
+    assert config.vwn_conf_get("REALITY_PUBKEY") == "new"
+
+
 def test_bad_core_falls_back_to_default(monkeypatch):
     monkeypatch.setattr(config, "vwn_conf_get",
                         lambda key: "weird" if key == "CORE" else None)

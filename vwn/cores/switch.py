@@ -256,6 +256,7 @@ def switch_to(name: str) -> None:
     if not target.available():
         target.install()
     keystore.migrate_from_xray_configs()
+    keystore.repair_reality_pubkey()
     _backup_core(old)
     ensure_guard_unit()
 

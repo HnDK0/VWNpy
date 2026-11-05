@@ -225,12 +225,16 @@ def _diag_transports() -> None:
                       check=False, capture=True, timeout=12)
         return (r.stdout or "").strip()
 
+    from vwn.modules.sub import get_disabled_protocols
+    disabled = get_disabled_protocols()
     ve = config.vwn_conf_get("VLESS_DECRYPTION") or "none"
-    if ve and ve != "none":
+    ve_on = ve and ve != "none"
+
+    if "grpc" in disabled:
+        console.print(f"  gRPC (nginx→{core_name}): {_skip('отключён')}")
+    elif ve_on:
         console.print("  gRPC (nginx→" + core_name + "): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
-        console.print("  XHTTP (grpc_pass): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
-        return
-    if not svc:
+    elif not svc:
         console.print(f"  gRPC (nginx→{core_name}): {_fail('нет GRPC_SERVICE', '→ vwn rebuild')}")
     else:
         pad = "X" * 500
@@ -243,12 +247,17 @@ def _diag_transports() -> None:
         console.print(f"  gRPC (проба 404):  "
                       + (_ok(c) if c == "404" else _fail(c or "нет ответа", "ожидается 404")))
 
-    pad = "X" * 500
-    c = _code(["--http2", "-H", "Referer: https://%s/?x_padding=%s" % (domain, pad),
-               f"https://{domain}:{port}{xh}/"])
-    bad = c in ("", "000", "502", "503", "504")
-    console.print(f"  XHTTP (grpc_pass): "
-                  + (_fail(c or "нет ответа", "upstream недоступен") if bad else _ok(c)))
+    if "xhttp" in disabled:
+        console.print(f"  XHTTP (grpc_pass): {_skip('отключён')}")
+    elif ve_on:
+        console.print("  XHTTP (grpc_pass): VLESS Encryption включён — probe без handshake невозможен (ожидаемо)")
+    else:
+        pad = "X" * 500
+        c = _code(["--http2", "-H", "Referer: https://%s/?x_padding=%s" % (domain, pad),
+                   f"https://{domain}:{port}{xh}/"])
+        bad = c in ("", "000", "502", "503", "504")
+        console.print(f"  XHTTP (grpc_pass): "
+                      + (_fail(c or "нет ответа", "upstream недоступен") if bad else _ok(c)))
 
 
 def _diag_nginx_test() -> None:

@@ -70,6 +70,21 @@ def test_reality_config_shape(monkeypatch):
     assert ib["streamSettings"]["sockopt"]["tcpFastOpen"] is True
 
 
+def test_generate_reality_keypair_parses_xray26_output(monkeypatch):
+    class R:
+        stdout = "PrivateKey: PRIV\nPassword: PUB\nHash32: HASH\n"
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: R())
+    assert xray.generate_reality_keypair() == ("PRIV", "PUB")
+
+
+def test_derive_reality_public(monkeypatch):
+    class R:
+        stdout = "PrivateKey: PRIV\nPassword: PUB\nHash32: HASH\n"
+    monkeypatch.setattr(xray.os.path, "isfile", lambda p: True)
+    monkeypatch.setattr(xray.shell, "run", lambda *a, **k: R())
+    assert xray.derive_reality_public("PRIV") == "PUB"
+
+
 def test_grpc_config_shape():
     c = xray.grpc_config("uuid-1", 50001, "svcabc123")
     ib = c["inbounds"][0]

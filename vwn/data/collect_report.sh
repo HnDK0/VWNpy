@@ -193,6 +193,9 @@ else
     WS_PATH="$(H inbound_path "$XD/ws.json" wsSettings 2>/dev/null || true)"
 fi
 VE="$(H get "$XD/vwn.conf" VLESS_ENCRYPTION)"
+DISABLED="$(H get "$XD/vwn.conf" DISABLED_PROTOCOLS)"
+case ",$DISABLED," in *,grpc,*) GRPC_SVC="";; esac
+case ",$DISABLED," in *,xhttp,*) XH_PATH="";; esac
 GRPC_NGX="$(H inconf "${GRPC_SVC:+/$GRPC_SVC}" "$NGX_CONF")"
 XH_NGX="$(H inconf "$XH_PATH" "$NGX_CONF")"
 

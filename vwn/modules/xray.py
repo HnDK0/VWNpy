@@ -164,21 +164,38 @@ def generate_short_id() -> str:
     return secrets.token_hex(8)
 
 
+def _parse_reality_keypair(text: str) -> "tuple[str | None, str | None]":
+    priv = pub = None
+    for line in (text or "").splitlines():
+        # Старые/новые версии xray выводят по-разному:
+        #   "Private key:" / "Public key:"   либо
+        #   "PrivateKey:" / "Password:" / "Password (PublicKey):"
+        if line.startswith("Private key:") or line.startswith("PrivateKey:"):
+            priv = line.split(":", 1)[1].strip()
+        elif (line.startswith("Public key:")
+              or line.startswith("Password:")
+              or line.startswith("Password (PublicKey):")):
+            pub = line.split(":", 1)[1].strip()
+    return priv, pub
+
+
 def generate_reality_keypair() -> "tuple[str, str]":
     """Сгенерировать (private, public) через `xray x25519`."""
     r = shell.run([config.XRAY_BIN, "x25519"], capture=True)
-    priv = pub = None
-    for line in (r.stdout or "").splitlines():
-        # Старые/новые версии xray выводят по-разному:
-        #   "Private key:" / "Public key:"   либо
-        #   "PrivateKey:" / "Password (PublicKey):"
-        if line.startswith("Private key:") or line.startswith("PrivateKey:"):
-            priv = line.split(":", 1)[1].strip()
-        elif line.startswith("Public key:") or line.startswith("Password (PublicKey):"):
-            pub = line.split(":", 1)[1].strip()
+    priv, pub = _parse_reality_keypair(r.stdout or "")
     if not priv or not pub:
         raise RuntimeError("Не удалось сгенерировать Reality-ключи (xray недоступен)")
     return priv, pub
+
+
+def derive_reality_public(private_key: str) -> "str | None":
+    """Получить public key из private через `xray x25519 -i`."""
+    if not private_key or not os.path.isfile(config.XRAY_BIN):
+        return None
+    r = shell.run([config.XRAY_BIN, "x25519", "-i", private_key],
+                  capture=True, check=False)
+    _, pub = _parse_reality_keypair(r.stdout or "")
+    return pub or None
 
 
 def reality_config(uuid: str, server_name: str,
@@ -926,6 +943,8 @@ def rebuild_configs(refresh_ip: bool = False) -> None:
     """
     from vwn.modules.sub import get_disabled_protocols
     reality_disabled = "reality" in get_disabled_protocols()
+    from vwn.cores import keystore
+    keystore.repair_reality_pubkey()
 
     # Сначала политика VLESS Encryption (fail-fast, до миграции и записи)
     decryption = resolve_vless_policy()

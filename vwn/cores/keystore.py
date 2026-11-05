@@ -89,6 +89,20 @@ def migrate_from_xray_configs() -> None:
             pass
 
 
+def repair_reality_pubkey() -> "str | None":
+    """Сверить public key с private и починить vwn.conf при расхождении."""
+    migrate_from_xray_configs()
+    private = get("REALITY_PRIVKEY")
+    if not private:
+        return None
+    from vwn.modules import xray
+    derived = xray.derive_reality_public(private)
+    if derived and derived != config.vwn_conf_get("REALITY_PUBKEY"):
+        config.vwn_conf_set("REALITY_PUBKEY", derived)
+        return derived
+    return None
+
+
 def reality_private_key() -> "str | None":
     migrate_from_xray_configs()
     return get("REALITY_PRIVKEY")
