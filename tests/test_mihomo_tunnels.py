@@ -115,6 +115,4 @@ def test_state_file_created_for_mihomo(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "core_name", lambda: "mihomo")
     paths = _outbound._paths()
     assert len(paths) == 1
-    assert "vwn-tunnels" in paths[0]
-    assert paths[0].startswith(str(tmp_path / "xray"))
-    assert not paths[0].startswith("/tmp")
+    assert paths[0] == str(tmp_path / "xray" / "vwn-tunnels.json")
