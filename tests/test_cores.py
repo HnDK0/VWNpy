@@ -99,11 +99,23 @@ def test_mihomo_renders_four_configs(tmp_path, monkeypatch):
     assert "proxy: \"DIRECT\"" in reality
     assert "flow: \"xtls-rprx-vision\"" in reality
     xhttp = open(paths["xhttp"], encoding="utf-8").read()
-    assert "allow-insecure: true" in xhttp
+    assert "allow-insecure:" not in xhttp
     assert "decryption:" in xhttp
     assert "xhttp-config:" in xhttp
+    assert "direct-nameserver:" in xhttp
+    assert "- \"system\"" in xhttp
     grpc = open(paths["grpc"], encoding="utf-8").read()
     assert "grpc-service-name: \"GunService\"" in grpc
+
+
+def test_mihomo_allows_insecure_only_without_vless_encryption(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MIHOMO_DIR", str(tmp_path / "mihomo"))
+    monkeypatch.setattr(config, "vwn_conf_get", lambda key: None)
+    p = ProvisionParams(**{**_params().__dict__, "decryption": "none"})
+    paths = mihomo_mod._render_all(p, [{"uuid": "u-1", "label": "alice"}])
+    xhttp = open(paths["xhttp"], encoding="utf-8").read()
+    assert "allow-insecure: true" in xhttp
+    assert "decryption:" not in xhttp
 
 
 def test_mihomo_reality_xhttp_has_no_flow(tmp_path, monkeypatch):

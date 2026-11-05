@@ -131,6 +131,9 @@ def _dns() -> dict:
         "enable": True,
         "enhanced-mode": "redir-host",
         "nameserver": servers,
+        # Если внешние DNS недоступны (провайдер режет 1.1.1.1/9.9.9.9),
+        # DIRECT-трафик должен резолвиться системным resolver'ом, как в Xray.
+        "direct-nameserver": ["system"],
     }
     if v6_primary:
         dns["fallback"] = [v6_primary]
@@ -245,11 +248,16 @@ def _loopback_listener(kind: str, params: ProvisionParams,
         "type": "vless",
         "listen": "127.0.0.1",
         "port": ports[kind],
-        "allow-insecure": True,
         "users": _listener_users(params, users, flow=False),
     }
     if params.decryption and params.decryption != "none":
+        # VLESS Encryption сама аутентифицирует и шифрует поток, поэтому
+        # allow-insecure для loopback за nginx не нужен.
         listener["decryption"] = params.decryption
+    else:
+        # nginx уже терминирует TLS и проксирует в loopback; без TLS и без
+        # VLESS Encryption mihomo требует явного allow-insecure.
+        listener["allow-insecure"] = True
     if kind == "grpc":
         listener["grpc-service-name"] = params.grpc_service
     elif kind == "xhttp":
