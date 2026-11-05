@@ -200,6 +200,7 @@ def _provision_core(opts: "InstallOptions") -> None:
         uuid=uuid_,
         grpc_service=grpc_service,
         xhttp_path=xhttp_path,
+        reality_xhttp_path=xhttp_path,
         ws_path=ws_path,
         short_id=short_id,
         private_key=private_key,

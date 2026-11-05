@@ -29,6 +29,7 @@ class ProvisionParams:
     server_ip: str = ""
     sniffer: bool = True
     vless_encryption: "bool | None" = None
+    reality_xhttp_path: str = ""
 
 
 @runtime_checkable

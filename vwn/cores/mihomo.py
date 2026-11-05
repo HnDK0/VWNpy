@@ -232,7 +232,10 @@ def _reality_listener(params: ProvisionParams, users: list[dict]) -> dict:
         },
     }
     if not flow:
-        listener["xhttp-config"] = {"path": params.xhttp_path, "mode": "auto"}
+        listener["xhttp-config"] = {
+            "path": params.reality_xhttp_path or params.xhttp_path,
+            "mode": "auto",
+        }
     return listener
 
 
@@ -348,6 +351,7 @@ def _params_from_conf(users: list[dict]) -> ProvisionParams:
         uuid=uuid_,
         grpc_service=grpc_service,
         xhttp_path=xhttp_path,
+        reality_xhttp_path=config.vwn_conf_get("REALITY_XHTTP_PATH") or "",
         ws_path=ws_path or "/ws",
         short_id=short_id,
         private_key=private_key,

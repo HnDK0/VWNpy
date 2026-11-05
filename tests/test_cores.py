@@ -78,6 +78,7 @@ def _params():
         uuid="11111111-1111-1111-1111-111111111111",
         grpc_service="GunService",
         xhttp_path="/xhttp",
+        reality_xhttp_path="/reality-xhttp",
         ws_path="/ws",
         short_id="abcd1234",
         private_key="priv",
@@ -126,6 +127,36 @@ def test_mihomo_reality_xhttp_has_no_flow(tmp_path, monkeypatch):
     text = open(paths["reality"], encoding="utf-8").read()
     assert "flow:" not in text
     assert "xhttp-config:" in text
+    assert "path: \"/reality-xhttp\"" in text
+    assert "path: \"/xhttp\"" not in text
+
+
+def test_manage_configs_opens_active_core_files(tmp_path, monkeypatch):
+    import vwn.tui.menu as menu
+    from vwn.cores import registry as core_registry
+
+    class Backend:
+        name = "mihomo"
+
+    mihomo_dir = tmp_path / "mihomo"
+    for key in ("reality", "grpc", "xhttp", "ws"):
+        path = mihomo_dir / key / f"{key}.yaml"
+        path.parent.mkdir(parents=True)
+        path.write_text("test: true\n", encoding="utf-8")
+
+    calls = []
+    monkeypatch.setattr(config, "MIHOMO_DIR", str(mihomo_dir))
+    monkeypatch.setattr(core_registry, "get_core", lambda: Backend())
+    monkeypatch.setattr(menu, "wait_key", lambda: None)
+    monkeypatch.setattr(menu.subprocess, "run",
+                        lambda argv, *a, **k: calls.append(argv))
+    monkeypatch.setattr("builtins.input", lambda *a: next(answers))
+    answers = iter(["1", "0"])
+
+    menu._manage_configs()
+
+    assert calls
+    assert calls[0][-1].endswith("mihomo/reality/reality.yaml")
 
 
 def test_mihomo_units(tmp_path, monkeypatch):

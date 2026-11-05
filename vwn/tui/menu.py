@@ -110,6 +110,55 @@ def _manage_core() -> None:
             wait_key()
 
 
+def _manage_configs() -> None:
+    """Открыть актуальные конфиги активного ядра в nano."""
+    from vwn.cores import registry
+
+    while True:
+        backend = registry.get_core()
+        files: list[tuple[str, str]] = []
+        if backend.name == "mihomo":
+            for key in ("reality", "grpc", "xhttp", "ws"):
+                files.append((
+                    f"mihomo {key}",
+                    os.path.join(config.MIHOMO_DIR, key, f"{key}.yaml"),
+                ))
+        else:
+            for name in config.XRAY_CONFIG_FILES:
+                files.append((f"xray {name}", os.path.join(config.XRAY_DIR, name)))
+        files.extend([
+            ("vwn.conf", config.vwn_conf_path()),
+            ("nginx loopback", config.NGINX_LOOPBACK_CONF),
+            ("nginx main", config.NGINX_MAIN_CONF),
+        ])
+
+        console.print(f"\n[bold]Конфиги[/] ({backend.name})")
+        for i, (label, path) in enumerate(files, 1):
+            mark = "" if os.path.isfile(path) else " [red](нет)[/]"
+            console.print(f"  {i}. {label}: {path}{mark}")
+        console.print("  0. Назад")
+        val = input("> ").strip()
+        if val == "0":
+            return
+        if not val.isdigit() or not (1 <= int(val) <= len(files)):
+            continue
+        label, path = files[int(val) - 1]
+        if not os.path.isfile(path):
+            console.print(f"  [red]Файл не найден: {path}[/]")
+            wait_key()
+            continue
+        editor = os.environ.get("EDITOR") or "nano"
+        console.print(f"  Открываю {path} в {editor}...")
+        try:
+            subprocess.run([editor, path])
+        except FileNotFoundError:
+            console.print(f"  [red]{editor} не найден[/]")
+        except KeyboardInterrupt:
+            console.print("\n  [yellow]Редактор прерван[/]")
+        console.print("  [yellow]После изменений выполните пересборку конфигов[/]")
+        wait_key()
+
+
 def _dispatch(choice: int) -> bool:
     """Выполнить пункт главного меню. False — выйти из меню."""
     if choice == 1:
@@ -417,6 +466,8 @@ def _dispatch(choice: int) -> bool:
         full_remove()
     elif choice == 17:
         _manage_core()
+    elif choice == 18:
+        _manage_configs()
     elif choice == 0:
         return False
     return True
@@ -451,6 +502,7 @@ def run_menu() -> None:
             "Перезапустить все сервисы",
             "Полное удаление",
             "Ядро (xray / mihomo)",
+            "Открыть конфиги (nano)",
         ]
         for i, item in enumerate(items, 1):
             console.print(f"  {i}. {item}")
