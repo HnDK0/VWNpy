@@ -12,14 +12,13 @@ from vwn.tui.helpers import (ensure_working_country, pick_country, restart_xray_
 
 
 def _switch_tunnel_mode(tag: str, mode: str) -> str:
-    if not os.path.isfile(os.path.join(config.XRAY_DIR, "grpc.json")):
-        return tag
     from vwn.modules._outbound import _paths
     from vwn.modules.tunnels import _match_tunnel_tag
+    paths = [p for p in _paths() if os.path.isfile(p)]
+    if not paths:
+        return tag
     actual_tag = _resolve_actual_tag(tag)
-    for path in _paths():
-        if not os.path.isfile(path):
-            continue
+    for path in paths:
         with open(path) as f:
             cfg = json.load(f)
         rules = cfg.setdefault("routing", {}).setdefault("rules", [])
@@ -45,6 +44,8 @@ def _switch_tunnel_mode(tag: str, mode: str) -> str:
         _cfg.vwn_conf_set(conf_key, mode)
     else:
         _cfg.vwn_conf_del(conf_key)
+    from vwn.cores.refresh import after_xray_config_change
+    after_xray_config_change()
     from vwn.modules.sub import rebuild_all_sub_files
     rebuild_all_sub_files()
     return actual_tag

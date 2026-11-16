@@ -176,6 +176,27 @@ def test_switch_split_uses_saved_domains(monkeypatch, tmp_path):
     assert split_rules[0]["domain"] == ["domain:google.com", "domain:youtube.com"]
 
 
+def test_switch_mode_refreshes_active_core(monkeypatch, tmp_path):
+    """Смена режима должна доехать до mihomo (refresh), а не только в Xray-JSON."""
+    from vwn.tui import tunnel_menu
+    from vwn.core import config as vc
+    import vwn.cores.refresh as refresh
+
+    monkeypatch.setattr(vc, "XRAY_DIR", str(tmp_path))
+    cfg = {"routing": {"rules": []},
+           "outbounds": [{"tag": "psiphon", "protocol": "socks"}]}
+    with open(tmp_path / "grpc.json", "w") as f:
+        json.dump(cfg, f)
+
+    calls = []
+    monkeypatch.setattr(refresh, "after_xray_config_change",
+                        lambda: calls.append(True) or True)
+
+    tunnel_menu._switch_tunnel_mode("psiphon", "Global")
+
+    assert calls == [True]
+
+
 # ── Bug 1: insert_before_catchall не ломает routing порядок ────────
 
 def test_insert_before_catchall_preserves_order():

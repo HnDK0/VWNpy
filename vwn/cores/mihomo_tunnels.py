@@ -289,10 +289,12 @@ def rules(proxy_tags: set[str]) -> list[str]:
             for cond in ips:
                 add(_rule_line([cond] + base, target, no_resolve=True))
 
-    # MATCH всегда последний; при нескольких оставляем последний.
+    # MATCH всегда последний. Xray матчит первым правилом, а catch-all идёт
+    # последним, поэтому Global-туннель стоит перед ним — берём первый MATCH,
+    # иначе туннель затирается MATCH,DIRECT из catch-all.
     if match_rules:
         result = [r for r in result if not r.startswith("MATCH,")]
-        result.append(match_rules[-1])
+        result.append(match_rules[0])
     return result
 
 

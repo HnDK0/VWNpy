@@ -97,6 +97,32 @@ def test_translate_rules(tmp_path, monkeypatch):
     assert rules[-1] == "MATCH,DIRECT"
 
 
+def test_global_tunnel_rule_wins_over_catchall(tmp_path, monkeypatch):
+    """Global-туннель должен остаться единственным MATCH, а не затереться DIRECT."""
+    monkeypatch.setattr(config, "XRAY_DIR", str(tmp_path / "xray"))
+    (tmp_path / "xray").mkdir()
+    cfg = {
+        "outbounds": [
+            {"tag": "free", "protocol": "freedom"},
+            {"tag": "psiphon", "protocol": "socks",
+             "settings": {"servers": [{"address": "127.0.0.1", "port": 40002}]}},
+        ],
+        "routing": {"rules": [
+            {"type": "field", "domain": ["geosite:category-ads-all"],
+             "outboundTag": "block"},
+            {"type": "field", "port": "0-65535", "outboundTag": "psiphon"},
+            {"type": "field", "port": "0-65535", "outboundTag": "free"},
+        ]},
+    }
+    for name in config.XRAY_CONFIG_FILES:
+        (tmp_path / "xray" / name).write_text(json.dumps(cfg), encoding="utf-8")
+
+    _, rules, _ = mihomo_tunnels.state()
+
+    assert [r for r in rules if r.startswith("MATCH,")] == ["MATCH,psiphon"]
+    assert rules[-1] == "MATCH,psiphon"
+
+
 def test_tunnel_state_syncs_from_xray_configs(tmp_path, monkeypatch):
     from vwn.core import tunnel_state
 
