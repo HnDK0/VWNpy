@@ -171,6 +171,21 @@ def test_mihomo_units(tmp_path, monkeypatch):
     assert units[0].endswith("mihomo-reality.service")
 
 
+def test_restart_active_services_skips_inactive_core(monkeypatch):
+    """Под mihomo нельзя перезапускать xray-юниты: restart поднимет их и отнимет порты."""
+    from vwn.core import shell
+    from vwn.cores import refresh
+
+    calls = []
+    monkeypatch.setattr(shell, "run", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(config, "vwn_conf_get",
+                        lambda key: "mihomo" if key == "CORE" else None)
+
+    refresh.restart_active_services()
+
+    assert calls == [["systemctl", "restart", svc] for svc in config.MIHOMO_SERVICES]
+
+
 def test_rollback_mihomo(tmp_path, monkeypatch):
     dest = tmp_path / "bin" / "mihomo"
     prev = tmp_path / "bin" / "mihomo.prev"

@@ -20,3 +20,24 @@ def after_xray_config_change() -> bool:
 
     tunnel_state.sync()
     return refresh_if_mihomo()
+
+
+def restart_active_services() -> None:
+    """Перезапустить сервисы только активного ядра.
+
+    systemctl restart поднимает и остановленный юнит, поэтому нельзя
+    перезапускать юниты неактивного ядра: под mihomo проснётся Xray и
+    займёт loopback-порты 50001-50003, а mihomo потеряет свои listeners.
+    """
+    from vwn.core import shell
+    from . import registry
+
+    backend = registry.get_core()
+    for svc in registry.active_services(backend):
+        shell.run(["systemctl", "restart", svc], check=False)
+
+
+def apply_tunnel_change() -> None:
+    """Сохранить туннели и перезапустить сервисы активного ядра."""
+    if not after_xray_config_change():
+        restart_active_services()

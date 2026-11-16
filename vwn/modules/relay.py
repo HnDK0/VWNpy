@@ -15,8 +15,8 @@ def configure(url: str) -> dict:
     _save_config(parsed)
     ob = _build_outbound(parsed)
     _apply_outbound(ob)
-    for svc in config.XRAY_SERVICES:
-        shell.run(["systemctl", "restart", svc], check=False)
+    from vwn.cores.refresh import restart_active_services
+    restart_active_services()
     return parsed
 
 
@@ -26,8 +26,8 @@ def remove() -> None:
     remove_outbound(TAG)
     from vwn.modules._domains import remove_file as _rmd
     _rmd(TAG)
-    for svc in config.XRAY_SERVICES:
-        shell.run(["systemctl", "restart", svc], check=False)
+    from vwn.cores.refresh import restart_active_services
+    restart_active_services()
 
 
 def add_domain(domain: str) -> bool:

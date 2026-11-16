@@ -159,8 +159,8 @@ def install(country: str = "", tunnel_mode: str = "plain") -> None:
     _write_config(country, upstream)
     _setup_service()
     add_outbound(TAG, "socks", PORT)
-    for svc in config.XRAY_SERVICES:
-        shell.run(["systemctl", "restart", svc], check=False)
+    from vwn.cores.refresh import restart_active_services
+    restart_active_services()
     time.sleep(3)
 
 
@@ -188,8 +188,8 @@ def remove() -> None:
     remove_outbound(TAG)
     from vwn.modules._domains import remove_file as _rmd
     _rmd(TAG)
-    for svc in config.XRAY_SERVICES:
-        shell.run(["systemctl", "restart", svc], check=False)
+    from vwn.cores.refresh import restart_active_services
+    restart_active_services()
 
 
 def add_domain(domain: str) -> bool:
