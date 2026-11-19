@@ -160,3 +160,21 @@ def test_generate_grpc_service():
     a, b = generate_grpc_service(), generate_grpc_service()
     assert a != b and a.startswith("svc") and "/" not in a
     assert validate_grpc_service(a) == a
+
+
+def test_drop_zero_body_buffer(tmp_path):
+    from vwn.core import system
+    p = tmp_path / "xray.conf"
+    p.write_text("server {\n    client_max_body_size 0;\n"
+                 "    client_body_buffer_size 0;\n"
+                 "    client_body_timeout 1w;\n}\n")
+    system._drop_zero_body_buffer(str(p))
+    text = p.read_text()
+    assert "client_body_buffer_size" not in text
+    assert "client_max_body_size 0;" in text
+    assert "client_body_timeout 1w;" in text
+
+
+def test_drop_zero_body_buffer_missing_file(tmp_path):
+    from vwn.core import system
+    system._drop_zero_body_buffer(str(tmp_path / "nope.conf"))

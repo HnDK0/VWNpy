@@ -155,9 +155,30 @@ def install_nginx(version: "str | None" = None) -> bool:
         # `make install` оставило бы сервер с чужим конфигом.
         _write_nginx_unit()
         _write_nginx_main_conf()
+        _drop_zero_body_buffer(config.NGINX_LOOPBACK_CONF)
         os.makedirs(config.NGINX_CONF_DIR, exist_ok=True)
         shell.run(["systemctl", "daemon-reload"], check=False)
     return rebuilt
+
+
+def _drop_zero_body_buffer(path: str) -> None:
+    """Убрать client_body_buffer_size 0 из старого конфига.
+
+    nginx 1.31.9+ отвергает нулевое значение, а конфиг на сервере мог быть
+    сгенерирован прежней версией vwn. grpc-модуль и так читает тело без буфера.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return
+    kept = [ln for ln in lines
+            if not re.match(r"\s*client_body_buffer_size\s+0\s*;", ln)]
+    if len(kept) == len(lines):
+        return
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.writelines(kept)
+    print(f"info: убран client_body_buffer_size 0 из {path}")
 
 
 def update_nginx(version: "str | None" = None) -> bool:
@@ -167,6 +188,7 @@ def update_nginx(version: "str | None" = None) -> bool:
     сервис не перезапускаем (старый мастер продолжает работать).
     """
     target = version or latest_nginx_version()
+    _drop_zero_body_buffer(config.NGINX_LOOPBACK_CONF)
     if not install_nginx(target):
         return False
     r = shell.run(["nginx", "-t"], check=False, capture=True)
