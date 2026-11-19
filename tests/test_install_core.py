@@ -72,3 +72,47 @@ def test_provision_mihomo_overwrites_stale_private_key(tmp_path, monkeypatch):
         assert (root / "mihomo" / key / f"{key}.yaml").is_file()
     assert (root / "systemd" / "mihomo-reality.service").is_file()
     assert (root / "xray.conf").is_file()
+
+
+def test_update_nginx_command_installs_latest(monkeypatch):
+    from vwn import cli as vcli
+    from vwn.core import system
+
+    calls = {}
+    runs = []
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(system, "latest_nginx_version", lambda: "1.31.9")
+    monkeypatch.setattr(system, "install_nginx",
+                        lambda v: calls.setdefault("version", v) is not None)
+    monkeypatch.setattr(system.shell, "run",
+                        lambda cmd, *a, **k: runs.append(cmd) or R())
+    r = CliRunner().invoke(vcli.cli, ["update-nginx"])
+    assert r.exit_code == 0, r.output
+    assert calls["version"] == "1.31.9"
+    assert ["nginx", "-t"] in runs
+    assert ["systemctl", "restart", "nginx"] in runs
+
+
+def test_update_nginx_skips_restart_on_bad_config(monkeypatch):
+    from vwn import cli as vcli
+    from vwn.core import system
+
+    runs = []
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = "nginx: [emerg] bad config"
+
+    monkeypatch.setattr(system, "latest_nginx_version", lambda: "1.31.9")
+    monkeypatch.setattr(system, "install_nginx", lambda v: True)
+    monkeypatch.setattr(system.shell, "run",
+                        lambda cmd, *a, **k: runs.append(cmd) or R())
+    r = CliRunner().invoke(vcli.cli, ["update-nginx"])
+    assert r.exit_code != 0
+    assert ["systemctl", "restart", "nginx"] not in runs

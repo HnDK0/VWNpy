@@ -457,6 +457,27 @@ def update_mihomo(version, check):
     click.echo("Готово.")
 
 
+@cli.command(name="update-nginx")
+@click.option("--version", default=None, help="Версия (по умолчанию latest)")
+@click.option("--check", is_flag=True, help="Только показать версии")
+def update_nginx(version, check):
+    """Обновить nginx (сборка из исходников nginx.org)."""
+    from vwn.core import system
+
+    latest = version or system.latest_nginx_version()
+    if check:
+        cur = system.nginx_version()
+        click.echo(f"Установлена: {'.'.join(map(str, cur)) if cur else 'нет'}")
+        click.echo(f"Latest:      {latest}")
+        return
+    click.echo(f"Обновление nginx → {latest}")
+    try:
+        changed = system.update_nginx(latest)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
+    click.echo("Готово." if changed else "Уже актуальная версия.")
+
+
 @cli.command(name="vless-enc")
 @click.argument("action", type=click.Choice(["on", "off"]))
 def vless_enc(action):

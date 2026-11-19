@@ -89,9 +89,24 @@ def nginx_has_grpc_module() -> bool:
 
 
 # nginx 1.30+ собираем из исходников nginx.org (как в старом коде), чтобы
-# гарантированно иметь http_grpc_module, http_v2 и свежий стабильный релиз.
-NGINX_TARGET_VER = "1.30.0"
-NGINX_SRC_URL = f"https://nginx.org/download/nginx-{NGINX_TARGET_VER}.tar.gz"
+# гарантированно иметь http_grpc_module, http_v2 и свежий релиз.
+# 1.31.9 закрывает NGINX2Root (CVE-2026-123007 и др., уязвимы 1.9.5–1.31.8).
+NGINX_TARGET_VER = "1.31.9"
+NGINX_DOWNLOAD_PAGE = "https://nginx.org/en/download.html"
+
+
+def nginx_src_url(version: str) -> str:
+    return f"https://nginx.org/download/nginx-{version}.tar.gz"
+
+
+def latest_nginx_version() -> str:
+    """Последняя версия nginx по странице загрузок nginx.org (mainline/stable)."""
+    with urllib.request.urlopen(NGINX_DOWNLOAD_PAGE, timeout=30) as resp:
+        html = resp.read().decode("utf-8", "replace")
+    versions = re.findall(r"nginx-(\d+\.\d+\.\d+)\.tar\.gz", html)
+    if not versions:
+        shell.die("не удалось определить последнюю версию nginx на nginx.org")
+    return max(versions, key=lambda v: tuple(int(x) for x in v.split(".")))
 
 
 def parse_nginx_version(text: str) -> "tuple[int, int, int] | None":
@@ -110,25 +125,58 @@ def version_ge(cur: "tuple[int, int, int] | None",
     return cur is not None and cur >= target
 
 
-def install_nginx() -> None:
-    """Обеспечить nginx >= NGINX_TARGET_VER. Если уже стоит — пропускаем.
+def install_nginx(version: "str | None" = None) -> bool:
+    """Обеспечить nginx >= version (по умолчанию NGINX_TARGET_VER).
 
     Стратегия (по старому коду): системный nginx из дистро не используем,
-    ставим стабильный 1.30+ сборкой из исходников nginx.org.
+    ставим сборкой из исходников nginx.org. Возвращает True, если пересобрали.
     """
-    if version_ge(nginx_version(), _target_tuple()):
-        print(f"info: nginx уже >= {NGINX_TARGET_VER}")
-        if not _nginx_has_required_modules():
-            print("info: в текущем nginx нет нужных модулей (ssl/v2/stream), пересобираем")
-            _build_nginx_from_source()
-    else:
-        _build_nginx_from_source()
-    # unit и главный конфиг пишем всегда (source-сборка кладёт свой дефолтный
-    # nginx.conf без include conf.d и с лишним 80-м server-ом)
-    _write_nginx_unit()
-    _write_nginx_main_conf()
-    os.makedirs(config.NGINX_CONF_DIR, exist_ok=True)
-    shell.run(["systemctl", "daemon-reload"], check=False)
+    target = version or NGINX_TARGET_VER
+    rebuilt = False
+    # source-сборка перезапишет /etc/nginx/nginx.conf дефолтным — сохраняем
+    # текущий (возможно, кастомный) рядом, чтобы было к чему вернуться.
+    if os.path.isfile(config.NGINX_MAIN_CONF):
+        backup = config.NGINX_MAIN_CONF + ".vwn-backup"
+        shutil.copy2(config.NGINX_MAIN_CONF, backup)
+        print(f"info: прежний nginx.conf сохранён в {backup}")
+    try:
+        if version_ge(nginx_version(), _target_tuple(target)):
+            print(f"info: nginx уже >= {target}")
+            if not _nginx_has_required_modules():
+                print("info: в текущем nginx нет нужных модулей (ssl/v2/stream), пересобираем")
+                _build_nginx_from_source(target)
+                rebuilt = True
+        else:
+            _build_nginx_from_source(target)
+            rebuilt = True
+    finally:
+        # unit и главный конфиг пишем всегда: source-сборка кладёт свой
+        # дефолтный nginx.conf без include conf.d, а падение сборки после
+        # `make install` оставило бы сервер с чужим конфигом.
+        _write_nginx_unit()
+        _write_nginx_main_conf()
+        os.makedirs(config.NGINX_CONF_DIR, exist_ok=True)
+        shell.run(["systemctl", "daemon-reload"], check=False)
+    return rebuilt
+
+
+def update_nginx(version: "str | None" = None) -> bool:
+    """Обновить nginx до version (по умолчанию latest) и перезапустить.
+
+    False — обновлять нечего. Если новый бинарь не проходит `nginx -t`,
+    сервис не перезапускаем (старый мастер продолжает работать).
+    """
+    target = version or latest_nginx_version()
+    if not install_nginx(target):
+        return False
+    r = shell.run(["nginx", "-t"], check=False, capture=True)
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"nginx -t не прошёл после сборки {target}: "
+            f"{(r.stderr or r.stdout or '').strip()[:500]}"
+        )
+    shell.run(["systemctl", "restart", config.NGINX_SERVICE], check=False)
+    return True
 
 
 _NGINX_UNIT = """[Unit]
@@ -168,8 +216,8 @@ def _write_nginx_main_conf() -> None:
         fh.write(content)
 
 
-def _target_tuple() -> "tuple[int, int, int]":
-    a, b, c = NGINX_TARGET_VER.split(".")
+def _target_tuple(version: str = NGINX_TARGET_VER) -> "tuple[int, int, int]":
+    a, b, c = version.split(".")
     return int(a), int(b), int(c)
 
 
@@ -186,15 +234,15 @@ def _nginx_has_required_modules() -> bool:
     return all(m in out for m in _REQUIRED_MODULES)
 
 
-def _build_nginx_from_source() -> None:
-    """Собрать nginx-${NGINX_TARGET_VER} из исходников (без shell=True).
+def _build_nginx_from_source(version: str = NGINX_TARGET_VER) -> None:
+    """Собрать nginx-${version} из исходников (без shell=True).
 
     Набор модулей сокращён до реально нужных нашему конфигу (ssl/v2/realip/
     grpc/gzip_static/stub_status/stream). Флаги фильтруются по `./configure
     --help`: в 1.30+ часть модулей (grpc, возможно ssl/v2) включена по
     умолчанию и не имеет --with- формы — передавать их нельзя.
     """
-    print(f"Сборка nginx {NGINX_TARGET_VER} из исходников...")
+    print(f"Сборка nginx {version} из исходников...")
     install_package("build-essential")
     for dep in ("libpcre2-dev", "zlib1g-dev", "libssl-dev"):
         install_package(dep)
@@ -202,11 +250,11 @@ def _build_nginx_from_source() -> None:
     build_dir = tempfile.mkdtemp(prefix="nginx-build-")
     tarball = os.path.join(build_dir, "nginx.tar.gz")
     try:
-        shell.run(["curl", "-fL", NGINX_SRC_URL, "-o", tarball], check=True)
+        shell.run(["curl", "-fL", nginx_src_url(version), "-o", tarball], check=True)
         import tarfile
         with tarfile.open(tarball) as tf:
             tf.extractall(build_dir)  # плоская структура: nginx-VER/*
-        src_dir = os.path.join(build_dir, f"nginx-{NGINX_TARGET_VER}")
+        src_dir = os.path.join(build_dir, f"nginx-{version}")
 
         # какие --with-* флаги валидны для этой версии (default-on модули —
         # только --without- форма, их пропускаем, они и так в сборке)
@@ -254,8 +302,8 @@ def _build_nginx_from_source() -> None:
     shell.run(["chown", "-R", "www-data:www-data", "/var/cache/nginx"],
               check=False)
 
-    if not version_ge(nginx_version(), _target_tuple()):
-        shell.die(f"nginx не собрался в версию >= {NGINX_TARGET_VER}")
+    if not version_ge(nginx_version(), _target_tuple(version)):
+        shell.die(f"nginx не собрался в версию >= {version}")
 
 
 # ── Установка Xray-core (бинарь + geo-базы) ────────────────────────────────

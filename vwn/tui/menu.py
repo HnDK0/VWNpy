@@ -467,6 +467,12 @@ def _dispatch(choice: int) -> bool:
     elif choice == 17:
         _manage_core()
     elif choice == 18:
+        from vwn.core import system as _sys
+        cur = _sys.nginx_version()
+        console.print(f"  Установлена: {'.'.join(map(str, cur)) if cur else 'нет'}")
+        run_task("Обновление nginx", _sys.update_nginx)
+        wait_key()
+    elif choice == 19:
         _manage_configs()
     elif choice == 0:
         return False
@@ -502,6 +508,7 @@ def run_menu() -> None:
             "Перезапустить все сервисы",
             "Полное удаление",
             "Ядро (xray / mihomo)",
+            "Обновить nginx",
             "Открыть конфиги (nano)",
         ]
         for i, item in enumerate(items, 1):

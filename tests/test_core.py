@@ -76,6 +76,26 @@ def test_version_ge():
                       (1, 30, 0)) is True
 
 
+def test_latest_nginx_version(monkeypatch):
+    from vwn.core import system
+
+    class Resp:
+        def read(self):
+            return (b'<a href="/download/nginx-1.31.9.tar.gz">1.31.9</a>'
+                    b'<a href="/download/nginx-1.9.5.tar.gz">1.9.5</a>'
+                    b'<a href="/download/nginx-1.30.7.tar.gz">1.30.7</a>')
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(system.urllib.request, "urlopen", lambda *a, **k: Resp())
+    # числовое сравнение, а не лексикографическое: 1.31.9 > 1.9.5
+    assert system.latest_nginx_version() == "1.31.9"
+
+
 def test_xray_arch_tag():
     assert _xray_arch_tag("x86_64") == "64"
     assert _xray_arch_tag("aarch64") == "arm64-v8a"

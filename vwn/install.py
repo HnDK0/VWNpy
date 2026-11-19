@@ -237,7 +237,7 @@ def run_install(argv: "list | None" = None) -> None:
                 "mmdb-bin"):
         shell.run_task(f"Установка {pkg}", lambda p=pkg: system.install_package(p))
 
-    shell.run_task("Установка nginx 1.30+ (из исходников)",
+    shell.run_task(f"Установка nginx {system.NGINX_TARGET_VER} (из исходников)",
                    system.install_nginx)
 
     if opts.core == "mihomo":
