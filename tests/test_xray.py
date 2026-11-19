@@ -783,3 +783,13 @@ def test_rebuild_respects_disabled_reality(paths, monkeypatch):
     assert (paths / "xray" / "xray-reality.json.disabled").exists()
     ng = (paths / "xray_loopback.conf").read_text(encoding="utf-8")
     assert "listen 0.0.0.0:443 ssl" in ng
+
+
+def test_nginx_locations_do_not_set_zero_body_buffer():
+    from vwn.modules.xray import nginx_grpc_location, nginx_xhttp_location
+    for block in (nginx_grpc_location("GunService", 10085),
+                  nginx_xhttp_location("/xhttp", 10086)):
+        # nginx 1.31.9+ отвергает client_body_buffer_size 0
+        assert "client_body_buffer_size" not in block
+        assert "client_max_body_size 0;" in block
+        assert "grpc_pass grpc://127.0.0.1:" in block

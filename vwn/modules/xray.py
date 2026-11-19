@@ -694,7 +694,7 @@ def nginx_grpc_location(service: str, port: int) -> str:
         "        return 404;\n"
         "    }\n"
         "    client_max_body_size 0;\n"
-        "    client_body_buffer_size 0;\n"
+        # grpc-модуль сам читает тело без буфера; 0 в nginx 1.31.9+ отвергается
         "    client_body_timeout 1w;\n"
         "    grpc_read_timeout 1w;\n"
         "    grpc_send_timeout 1w;\n"
@@ -712,7 +712,7 @@ def nginx_xhttp_location(path: str, port: int) -> str:
         "location ^~ " + path + " {\n"
         "    if ($request_method !~ ^(GET|POST)$) { return 404; }\n"
         "    client_max_body_size 0;\n"
-        "    client_body_buffer_size 0;\n"
+        # grpc-модуль сам читает тело без буфера; 0 в nginx 1.31.9+ отвергается
         "    client_body_timeout 1w;\n"
         "    grpc_read_timeout 1w;\n"
         "    grpc_send_timeout 1w;\n"
